@@ -70,72 +70,12 @@ export type BasemapPreset = {
 };
 
 export const COLOR_PRESETS: ColorPreset[] = [
-  {
-    name: 'Inferno',
-    color: [255, 80, 20],
-    gradient: [
-      [10, 5, 40, 60],     // deep violet (cold)
-      [120, 20, 60, 90],   // dark magenta
-      [220, 60, 10, 130],  // red-orange
-      [255, 180, 0, 180],  // amber
-      [255, 255, 100, 240] // hot yellow
-    ],
-  },
-  {
-    name: 'Ocean',
-    color: [0, 120, 255],
-    gradient: [
-      [5, 10, 50, 60],
-      [10, 50, 140, 100],
-      [20, 100, 200, 140],
-      [50, 180, 230, 180],
-      [150, 240, 255, 230]
-    ],
-  },
-  {
-    name: 'Viridis',
-    color: [30, 180, 100],
-    gradient: [
-      [68, 1, 84, 60],
-      [59, 82, 139, 100],
-      [33, 145, 140, 140],
-      [94, 201, 98, 180],
-      [253, 231, 37, 240]
-    ],
-  },
-  {
-    name: 'Plasma',
-    color: [180, 50, 220],
-    gradient: [
-      [13, 8, 135, 60],
-      [126, 3, 168, 100],
-      [204, 71, 120, 140],
-      [248, 149, 64, 180],
-      [240, 249, 33, 240]
-    ],
-  },
-  {
-    name: 'Hot',
-    color: [255, 40, 10],
-    gradient: [
-      [30, 0, 0, 60],
-      [150, 0, 0, 100],
-      [255, 40, 0, 140],
-      [255, 160, 0, 180],
-      [255, 255, 200, 240]
-    ],
-  },
-  {
-    name: 'Mono',
-    color: [255, 255, 255],
-    gradient: [
-      [255, 255, 255, 30],
-      [255, 255, 255, 60],
-      [255, 255, 255, 100],
-      [255, 255, 255, 150],
-      [255, 255, 255, 220]
-    ],
-  },
+  { name: 'Fire',    color: [255, 100, 20],  gradient: [] },
+  { name: 'Blue',    color: [40, 120, 255],  gradient: [] },
+  { name: 'Green',   color: [20, 200, 80],   gradient: [] },
+  { name: 'Purple',  color: [180, 60, 240],  gradient: [] },
+  { name: 'Red',     color: [255, 30, 30],   gradient: [] },
+  { name: 'Cyan',    color: [0, 220, 220],   gradient: [] },
 ];
 
 const ESRI_SATELLITE_STYLE = {
@@ -171,11 +111,6 @@ export const BASEMAP_PRESETS: BasemapPreset[] = [
   {
     name: 'Light',
     icon: '☀️',
-    style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-  },
-  {
-    name: 'Color',
-    icon: '🗺️',
     style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
   },
   {

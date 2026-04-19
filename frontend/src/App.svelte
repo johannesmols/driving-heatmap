@@ -6,6 +6,9 @@
   import MenuIcon from '@lucide/svelte/icons/menu';
   import PanelLeftCloseIcon from '@lucide/svelte/icons/panel-left-close';
   import CarIcon from '@lucide/svelte/icons/car';
+  import RouteIcon from '@lucide/svelte/icons/route';
+  import CalendarIcon from '@lucide/svelte/icons/calendar-range';
+  import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
   import type { Trip, TripDetail, GeoJSONLineString, Vehicle } from './lib/types.js';
 
   let stats = $state<{
@@ -81,11 +84,11 @@
 
     <!-- Vehicle selector -->
     {#if vehicles.length > 0}
-      <div class="flex items-center gap-2 shrink-0">
+      <div class="relative flex items-center gap-1.5 shrink-0">
         <CarIcon class="size-4 text-muted-foreground" />
         <select
           bind:value={selectedVehicleId}
-          class="bg-secondary text-secondary-foreground text-sm rounded px-2 py-1 border border-border"
+          class="appearance-none bg-transparent text-foreground text-sm pr-5 cursor-pointer focus:outline-none"
         >
           {#each vehicles as v}
             <option value={v.id}>
@@ -93,17 +96,26 @@
             </option>
           {/each}
         </select>
+        <ChevronDownIcon class="size-3 text-muted-foreground absolute right-0 pointer-events-none" />
       </div>
       <span class="text-border">|</span>
     {/if}
 
-    <div class="flex items-center gap-4">
+    <div class="flex items-center gap-3">
       {#if stats}
-        <span class="font-semibold">{stats.trip_count.toLocaleString()} trips</span>
-        <span class="text-muted-foreground">&middot;</span>
-        <span>{Number(stats.total_km).toLocaleString()} km</span>
-        <span class="text-muted-foreground">&middot;</span>
-        <span>{stats.oldest_trip?.slice(0, 10)} &rarr; {stats.newest_trip?.slice(0, 10)}</span>
+        <div class="flex items-center gap-1.5">
+          <RouteIcon class="size-3.5 text-muted-foreground" />
+          <span class="font-semibold">{stats.trip_count.toLocaleString()} trips</span>
+          <span class="text-muted-foreground">·</span>
+          <span>{Number(stats.total_km).toLocaleString()} km</span>
+        </div>
+        <span class="text-border">|</span>
+        <div class="flex items-center gap-1.5">
+          <CalendarIcon class="size-3.5 text-muted-foreground" />
+          <span>{stats.oldest_trip?.slice(0, 10)}</span>
+          <span class="text-muted-foreground">to</span>
+          <span>{stats.newest_trip?.slice(0, 10)}</span>
+        </div>
       {:else}
         <span class="text-muted-foreground">Loading stats&hellip;</span>
       {/if}

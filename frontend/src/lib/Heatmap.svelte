@@ -121,6 +121,7 @@
           data: currentPaths,
           getPath: (d: any) => d.path,
           getColor: [r, g, b, alpha],
+          updateTriggers: { getColor: [r, g, b, alpha] },
           getWidth: 2,
           widthMinPixels: 2,
           parameters: {
