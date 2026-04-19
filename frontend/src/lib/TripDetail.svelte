@@ -2,7 +2,6 @@
   import type { TripDetail } from './types.js';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Separator } from '$lib/components/ui/separator/index.js';
-  import * as Tabs from '$lib/components/ui/tabs/index.js';
   import SpeedChart from './SpeedChart.svelte';
 
   let { detail }: { detail: TripDetail } = $props();
@@ -32,7 +31,6 @@
 
   let stats = $derived<StatRow[]>([
     { label: 'Distance', value: `${detail.mileage_km?.toFixed(1)} km` },
-    { label: 'GPS distance', value: `${detail.gps_mileage_km?.toFixed(1)} km` },
     { label: 'Duration', value: formatDuration(detail.duration_min) },
     { label: 'Avg speed', value: `${avgSpeed} km/h` },
     ...(detail.fuel_used_l && detail.fuel_used_l > 0 ? [{ label: 'Fuel', value: `${detail.fuel_used_l.toFixed(2)} L` }] : []),
@@ -54,7 +52,7 @@
 </script>
 
 <div class="flex-1 overflow-y-auto min-h-0 px-3 py-3 space-y-3">
-  <!-- Addresses (always visible) -->
+  <!-- Addresses -->
   <div>
     <div class="text-xs text-muted-foreground mb-1">From</div>
     <div class="text-sm text-foreground">{detail.start_address || '—'}</div>
@@ -66,7 +64,7 @@
 
   <Separator />
 
-  <!-- Time (always visible) -->
+  <!-- Time -->
   <div class="space-y-1">
     <div class="flex justify-between text-sm">
       <span class="text-muted-foreground">Departed</span>
@@ -80,70 +78,54 @@
 
   <Separator />
 
-  <!-- Tabbed detail sections -->
-  <Tabs.Root value="overview">
-    <Tabs.List>
-      <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
-      <Tabs.Trigger value="events">Events{totalEvents > 0 ? ` (${totalEvents})` : ''}</Tabs.Trigger>
-      <Tabs.Trigger value="speed">Speed</Tabs.Trigger>
-    </Tabs.List>
+  <!-- Overview stats -->
+  <div class="space-y-1">
+    {#each stats as s}
+      <div class="flex justify-between text-sm">
+        <span class="text-muted-foreground">{s.label}</span>
+        <span class="text-foreground font-medium">{s.value}</span>
+      </div>
+    {/each}
+  </div>
 
-    <Tabs.Content value="overview">
-      <div class="space-y-1 pt-2">
-        {#each stats as s}
-          <div class="flex justify-between text-sm">
-            <span class="text-muted-foreground">{s.label}</span>
-            <span class="text-foreground font-medium">{s.value}</span>
-          </div>
+  <!-- Driving events -->
+  {#if totalEvents > 0}
+    <Separator />
+    <div>
+      <div class="text-xs text-muted-foreground mb-2">Driving Events</div>
+      <div class="space-y-2">
+        {#each events as ev}
+          {@const total = ev.high + ev.med + (ev.low ?? 0)}
+          {#if total > 0}
+            <div>
+              <div class="text-sm text-foreground font-medium mb-1">{ev.label}</div>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                {#if ev.high > 0}
+                  <Badge variant="destructive" class="text-xs">{ev.high} hard</Badge>
+                {/if}
+                {#if ev.med > 0}
+                  <Badge variant="secondary" class="text-xs">{ev.med} medium</Badge>
+                {/if}
+                {#if (ev.low ?? 0) > 0}
+                  <Badge variant="outline" class="text-xs">{ev.low} light</Badge>
+                {/if}
+              </div>
+            </div>
+          {/if}
         {/each}
       </div>
+    </div>
+  {/if}
 
-      {#if detail.positions?.length}
-        <div class="text-xs text-muted-foreground mt-3">
-          {detail.positions.length} GPS points recorded
-        </div>
-      {/if}
-    </Tabs.Content>
-
-    <Tabs.Content value="events">
-      <div class="pt-2">
-        {#if totalEvents === 0}
-          <div class="text-sm text-muted-foreground">No driving events recorded for this trip.</div>
-        {:else}
-          <div class="space-y-3">
-            {#each events as ev}
-              {@const total = ev.high + ev.med + (ev.low ?? 0)}
-              {#if total > 0}
-                <div>
-                  <div class="text-sm text-foreground font-medium mb-1">{ev.label}</div>
-                  <div class="flex items-center gap-1.5 flex-wrap">
-                    {#if ev.high > 0}
-                      <Badge variant="destructive" class="text-xs">{ev.high} hard</Badge>
-                    {/if}
-                    {#if ev.med > 0}
-                      <Badge variant="secondary" class="text-xs">{ev.med} medium</Badge>
-                    {/if}
-                    {#if (ev.low ?? 0) > 0}
-                      <Badge variant="outline" class="text-xs">{ev.low} light</Badge>
-                    {/if}
-                  </div>
-                </div>
-              {/if}
-            {/each}
-          </div>
-        {/if}
+  <!-- Speed chart -->
+  {#if detail.positions?.length >= 2}
+    <Separator />
+    <div>
+      <div class="text-xs text-muted-foreground mb-2">Speed Profile</div>
+      <SpeedChart positions={detail.positions} />
+      <div class="text-xs text-muted-foreground mt-1 text-center">
+        {detail.positions.length} GPS points — capped at 130 km/h
       </div>
-    </Tabs.Content>
-
-    <Tabs.Content value="speed">
-      <div class="pt-2">
-        <SpeedChart positions={detail.positions} />
-        {#if detail.positions?.length}
-          <div class="text-xs text-muted-foreground mt-1 text-center">
-            Speed profile ({detail.positions.length} points) — capped at 130 km/h
-          </div>
-        {/if}
-      </div>
-    </Tabs.Content>
-  </Tabs.Root>
+    </div>
+  {/if}
 </div>

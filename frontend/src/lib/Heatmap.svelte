@@ -15,11 +15,13 @@
     vehicleId = null,
     dateFrom = '',
     dateTo = '',
+    onTripClick,
   }: {
     highlightedRoute?: GeoJSONLineString | null;
     vehicleId?: string | null;
     dateFrom?: string;
     dateTo?: string;
+    onTripClick?: (tripId: string) => void;
   } = $props();
 
   let mapContainer: HTMLDivElement;
@@ -123,11 +125,11 @@
     initMap(style);
   });
 
-  // React to color changes (basemap.blendMode also affects rendering)
+  // React to color or basemap changes
   $effect(() => {
     if (!mapReady || currentPaths.length === 0) return;
     const _name = colorPreset.name;
-    const _blend = basemap.blendMode;
+    const _dark = basemap.dark;
     updateLayer();
   });
 
@@ -163,33 +165,21 @@
     return Math.round(40 + (120 - 40) * (zoom - 6) / (13 - 6));
   }
 
-  function getBlendParameters(mode: 'additive' | 'multiply') {
-    if (mode === 'additive') {
-      // Dark/satellite: overlapping lines accumulate brightness (glow)
-      return {
-        depthWriteEnabled: false,
-        blendColorSrcFactor: 'src-alpha' as const,
-        blendColorDstFactor: 'one' as const,
-        blendColorOperation: 'add' as const,
-      };
-    }
-    // Light: overlapping lines darken (Strava "Winter" style multiply blend)
-    return {
-      depthWriteEnabled: false,
-      blendColorSrcFactor: 'dst' as const,
-      blendColorDstFactor: 'zero' as const,
-      blendColorOperation: 'add' as const,
-    };
-  }
+  // Additive blending on all basemaps — overlapping lines accumulate brightness
+  const ADDITIVE_BLEND = {
+    depthWriteEnabled: false,
+    blendColorSrcFactor: 'src-alpha' as const,
+    blendColorDstFactor: 'one' as const,
+    blendColorOperation: 'add' as const,
+  };
 
   function updateLayer() {
     if (!overlay || currentPaths.length === 0) return;
     if (highlightedRoute) return;
 
-    const mode = basemap.blendMode;
     const isDark = basemap.dark;
     const [r, g, b] = isDark ? colorPreset.dark : colorPreset.light;
-    const alpha = isDark ? alphaForZoom(map.getZoom()) : 200;
+    const alpha = alphaForZoom(map.getZoom());
 
     const filteredPaths = timeFilter
       ? currentPaths.filter((p: any) => p.started_at && p.started_at <= timeFilter)
@@ -198,16 +188,16 @@
     overlay.setProps({
       layers: [
         new PathLayer({
-          id: `heatmap-${colorPreset.name}-${mode}-${timeFilter ?? 'all'}`,
+          id: `heatmap-${colorPreset.name}-${isDark ? 'd' : 'l'}-${timeFilter ?? 'all'}`,
           data: filteredPaths,
           getPath: (d: any) => d.path,
           getColor: [r, g, b, alpha],
-          getWidth: isDark ? 2 : 3,
-          widthMinPixels: isDark ? 2 : 3,
-          parameters: getBlendParameters(mode),
+          getWidth: 2,
+          widthMinPixels: 2,
+          parameters: ADDITIVE_BLEND,
           pickable: true,
           autoHighlight: true,
-          highlightColor: isDark ? [255, 255, 255, 60] : [0, 0, 0, 40],
+          highlightColor: [255, 255, 255, 60],
           onHover: (info: any) => {
             if (info.object) {
               hoverInfo = {
@@ -223,6 +213,11 @@
               hoverInfo = null;
             }
           },
+          onClick: (info: any) => {
+            if (info.object?.id && onTripClick) {
+              onTripClick(info.object.id);
+            }
+          },
         }),
       ],
     });
@@ -230,13 +225,14 @@
 
   function showHighlightedRoute(route: GeoJSONLineString) {
     if (!overlay) return;
+    const [r, g, b] = colorPreset.dark;
     overlay.setProps({
       layers: [
         new PathLayer({
           id: 'highlight',
           data: [{ path: route.coordinates }],
           getPath: (d: any) => d.path,
-          getColor: basemap.dark ? [255, 255, 255, 220] : [0, 0, 0, 200],
+          getColor: [r, g, b, 220],
           getWidth: 4,
           widthMinPixels: 3,
         }),

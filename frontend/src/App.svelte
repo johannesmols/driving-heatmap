@@ -61,11 +61,16 @@
   let hasDateFilter = $derived(dateFrom !== '' || dateTo !== '');
 
   async function handleTripSelect(trip: Trip) {
-    const res = await fetch(`/api/trips/${encodeURIComponent(trip.id)}`);
+    await openTrip(trip.id);
+  }
+
+  async function openTrip(tripId: string) {
+    const res = await fetch(`/api/trips/${encodeURIComponent(tripId)}`);
     if (!res.ok) return;
     const detail: TripDetail = await res.json();
     selectedTrip = detail;
     highlightedRoute = detail.route;
+    sidebarCollapsed = false;
   }
 
   function clearDateFilter() {
@@ -189,7 +194,7 @@
     />
     <div class="flex-1 min-w-0 flex flex-col">
       <div class="flex-1 min-h-0">
-        <Heatmap bind:this={heatmapRef} {highlightedRoute} vehicleId={selectedVehicleId} {dateFrom} {dateTo} />
+        <Heatmap bind:this={heatmapRef} {highlightedRoute} vehicleId={selectedVehicleId} {dateFrom} {dateTo} onTripClick={openTrip} />
       </div>
       {#if insightsOpen}
         <div class="h-[45vh] shrink-0 transition-[height] duration-300 ease-in-out overflow-hidden">

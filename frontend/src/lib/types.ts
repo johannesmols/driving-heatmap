@@ -69,7 +69,6 @@ export type BasemapPreset = {
   name: string;
   style: string | object;
   dark: boolean;
-  blendMode: 'additive' | 'multiply';
 };
 
 export type InsightsResponse = {
@@ -145,18 +144,15 @@ export const BASEMAP_PRESETS: BasemapPreset[] = [
     name: 'Dark',
     style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
     dark: true,
-    blendMode: 'additive',
   },
   {
     name: 'Light',
     style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
     dark: false,
-    blendMode: 'multiply',
   },
   {
     name: 'Satellite',
     style: ESRI_SATELLITE_STYLE,
     dark: true,
-    blendMode: 'additive',
   },
 ];
