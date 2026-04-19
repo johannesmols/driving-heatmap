@@ -1,6 +1,7 @@
 import json
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Optional
 
 import asyncpg
@@ -9,6 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 pool: asyncpg.Pool = None
+
+
+def parse_dt(s: str) -> datetime:
+    """Parse an ISO 8601 string into a datetime for asyncpg."""
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
 async def _init_connection(conn: asyncpg.Connection) -> None:
@@ -46,37 +52,65 @@ app.add_middleware(
 
 
 @app.get("/api/stats")
-async def get_stats():
+async def get_stats(vehicle_id: Optional[str] = Query(None)):
+    conditions, params = ["1=1"], []
+    if vehicle_id:
+        params.append(vehicle_id)
+        conditions.append(f"vehicle_id = ${len(params)}")
+    where = " AND ".join(conditions)
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
+        row = await conn.fetchrow(f"""
             SELECT
                 COUNT(*)                            AS trip_count,
                 ROUND(SUM(mileage_km)::numeric, 1)  AS total_km,
                 ROUND(SUM(COALESCE(fuel_used_l, 0))::numeric, 1) AS total_fuel_l,
                 MIN(started_at)                     AS oldest_trip,
                 MAX(started_at)                     AS newest_trip,
-                (SELECT COUNT(*) FROM positions)    AS position_count
+                (SELECT COUNT(*) FROM positions p
+                 JOIN trips t2 ON p.trip_id = t2.id
+                 WHERE {where.replace('vehicle_id', 't2.vehicle_id')}) AS position_count
             FROM trips
-        """)
+            WHERE {where}
+        """, *params)
     return dict(row)
+
+
+@app.get("/api/vehicles")
+async def list_vehicles():
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT v.id, v.make, v.model, v.year, v.license_plate,
+                   COUNT(t.id) AS trip_count,
+                   ROUND(COALESCE(SUM(t.mileage_km), 0)::numeric, 1) AS total_km
+            FROM vehicles v
+            LEFT JOIN trips t ON t.vehicle_id = v.id
+            GROUP BY v.id
+            ORDER BY v.license_plate
+        """)
+    return [dict(r) for r in rows]
 
 
 @app.get("/api/trips")
 async def list_trips(
-    from_:  Optional[str] = Query(None, alias="from"),
-    to:     Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    sort:   Optional[str] = Query("date_desc"),
-    limit:  int           = Query(50, le=500),
-    offset: int           = Query(0),
+    from_:      Optional[str] = Query(None, alias="from"),
+    to:         Optional[str] = Query(None),
+    search:     Optional[str] = Query(None),
+    sort:       Optional[str] = Query("date_desc"),
+    vehicle_id: Optional[str] = Query(None),
+    limit:      int           = Query(50, le=500),
+    offset:     int           = Query(0),
 ):
     conditions, params = ["1=1"], []
 
+    if vehicle_id:
+        params.append(vehicle_id)
+        conditions.append(f"vehicle_id = ${len(params)}")
+
     if from_:
-        params.append(from_)
+        params.append(parse_dt(from_))
         conditions.append(f"started_at >= ${len(params)}")
     if to:
-        params.append(to)
+        params.append(parse_dt(to))
         conditions.append(f"started_at <= ${len(params)}")
     if search:
         params.append(f"%{search}%")
@@ -147,11 +181,12 @@ async def get_trip(trip_id: str):
 
 @app.get("/api/tracks")
 async def get_tracks(
-    from_:    Optional[str]   = Query(None, alias="from"),
-    to:       Optional[str]   = Query(None),
-    bbox:     Optional[str]   = Query(None, description="minLng,minLat,maxLng,maxLat"),
-    simplify: Optional[float] = Query(None, description="Simplification tolerance in degrees. "
-                                      "0.001 = zoom ~10, 0.01 = zoom ~8, omit for full detail"),
+    from_:      Optional[str]   = Query(None, alias="from"),
+    to:         Optional[str]   = Query(None),
+    vehicle_id: Optional[str]   = Query(None),
+    bbox:       Optional[str]   = Query(None, description="minLng,minLat,maxLng,maxLat"),
+    simplify:   Optional[float] = Query(None, description="Simplification tolerance in degrees. "
+                                        "0.001 = zoom ~10, 0.01 = zoom ~8, omit for full detail"),
 ):
     """
     Returns all trip routes as a GeoJSON FeatureCollection.
@@ -160,11 +195,15 @@ async def get_tracks(
     """
     conditions, params = ["route IS NOT NULL"], []
 
+    if vehicle_id:
+        params.append(vehicle_id)
+        conditions.append(f"vehicle_id = ${len(params)}")
+
     if from_:
-        params.append(from_)
+        params.append(parse_dt(from_))
         conditions.append(f"started_at >= ${len(params)}")
     if to:
-        params.append(to)
+        params.append(parse_dt(to))
         conditions.append(f"started_at <= ${len(params)}")
     if bbox:
         min_lng, min_lat, max_lng, max_lat = map(float, bbox.split(","))

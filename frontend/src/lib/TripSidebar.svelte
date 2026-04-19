@@ -11,10 +11,12 @@
   let {
     collapsed = $bindable(false),
     selectedTrip = $bindable<TripDetail | null>(null),
+    vehicleId = null,
     onTripSelect,
   }: {
     collapsed: boolean;
     selectedTrip: TripDetail | null;
+    vehicleId?: string | null;
     onTripSelect: (trip: Trip) => void;
   } = $props();
 
@@ -38,6 +40,7 @@
       offset: String(off),
       sort: sortBy,
     });
+    if (vehicleId) params.set('vehicle_id', vehicleId);
     if (searchQuery.trim()) params.set('search', searchQuery.trim());
     if (dateFrom) params.set('from', `${dateFrom}T00:00:00Z`);
     if (dateTo) params.set('to', `${dateTo}T23:59:59Z`);
@@ -80,6 +83,7 @@
     void sortBy;
     void dateFrom;
     void dateTo;
+    void vehicleId;
     // Don't track any state mutated inside loadTrips
     untrack(() => loadTrips(true));
   });

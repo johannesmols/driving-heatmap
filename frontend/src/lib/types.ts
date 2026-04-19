@@ -1,3 +1,13 @@
+export type Vehicle = {
+  id: string;
+  make: string | null;
+  model: string | null;
+  year: number | null;
+  license_plate: string | null;
+  trip_count: number;
+  total_km: number;
+};
+
 export type Trip = {
   id: string;
   started_at: string;
@@ -50,6 +60,7 @@ export type Position = {
 export type ColorPreset = {
   name: string;
   color: [number, number, number];
+  gradient: [number, number, number, number][]; // RGBA stops from cold→hot
 };
 
 export type BasemapPreset = {
@@ -59,12 +70,72 @@ export type BasemapPreset = {
 };
 
 export const COLOR_PRESETS: ColorPreset[] = [
-  { name: 'Fire', color: [255, 80, 20] },
-  { name: 'Blue', color: [0, 100, 255] },
-  { name: 'Green', color: [0, 200, 50] },
-  { name: 'Purple', color: [160, 32, 240] },
-  { name: 'Red', color: [255, 20, 20] },
-  { name: 'White', color: [255, 255, 255] },
+  {
+    name: 'Inferno',
+    color: [255, 80, 20],
+    gradient: [
+      [10, 5, 40, 60],     // deep violet (cold)
+      [120, 20, 60, 90],   // dark magenta
+      [220, 60, 10, 130],  // red-orange
+      [255, 180, 0, 180],  // amber
+      [255, 255, 100, 240] // hot yellow
+    ],
+  },
+  {
+    name: 'Ocean',
+    color: [0, 120, 255],
+    gradient: [
+      [5, 10, 50, 60],
+      [10, 50, 140, 100],
+      [20, 100, 200, 140],
+      [50, 180, 230, 180],
+      [150, 240, 255, 230]
+    ],
+  },
+  {
+    name: 'Viridis',
+    color: [30, 180, 100],
+    gradient: [
+      [68, 1, 84, 60],
+      [59, 82, 139, 100],
+      [33, 145, 140, 140],
+      [94, 201, 98, 180],
+      [253, 231, 37, 240]
+    ],
+  },
+  {
+    name: 'Plasma',
+    color: [180, 50, 220],
+    gradient: [
+      [13, 8, 135, 60],
+      [126, 3, 168, 100],
+      [204, 71, 120, 140],
+      [248, 149, 64, 180],
+      [240, 249, 33, 240]
+    ],
+  },
+  {
+    name: 'Hot',
+    color: [255, 40, 10],
+    gradient: [
+      [30, 0, 0, 60],
+      [150, 0, 0, 100],
+      [255, 40, 0, 140],
+      [255, 160, 0, 180],
+      [255, 255, 200, 240]
+    ],
+  },
+  {
+    name: 'Mono',
+    color: [255, 255, 255],
+    gradient: [
+      [255, 255, 255, 30],
+      [255, 255, 255, 60],
+      [255, 255, 255, 100],
+      [255, 255, 255, 150],
+      [255, 255, 255, 220]
+    ],
+  },
 ];
 
 const ESRI_SATELLITE_STYLE = {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import maplibregl from 'maplibre-gl';
   import { PathLayer } from '@deck.gl/layers';
   import { MapboxOverlay } from '@deck.gl/mapbox';
@@ -10,9 +10,11 @@
 
   let {
     highlightedRoute = null,
+    vehicleId = null,
     onMapResize,
   }: {
     highlightedRoute?: GeoJSONLineString | null;
+    vehicleId?: string | null;
     onMapResize?: () => void;
   } = $props();
 
@@ -59,17 +61,29 @@
     try { localStorage.setItem('heatmap-color', colorPreset.name); } catch {}
   });
 
-  // Basemap switching
+  // Basemap switching — skip the initial run (map already has the style)
+  let prevBasemapName: string | null = null;
   $effect(() => {
     if (!map || !mapReady) return;
-    const style = basemap.style;
-    map.setStyle(style as any);
+    const name = basemap.name;
+    if (prevBasemapName === null) {
+      // First run — just record, don't setStyle (map was created with this style)
+      prevBasemapName = name;
+      return;
+    }
+    if (name === prevBasemapName) return;
+    prevBasemapName = name;
+    map.setStyle(basemap.style as any);
   });
 
   // Re-attach overlay after style switch
   function onStyleData() {
     const firstSymbol = map.getStyle().layers?.find((l: any) => l.type === 'symbol');
     firstSymbolLayerId = firstSymbol?.id;
+    // Re-create and re-add the overlay — setStyle disconnects the old one
+    map.removeControl(overlay as any);
+    overlay = new MapboxOverlay({ interleaved: true, layers: [] });
+    map.addControl(overlay as any);
     updateLayer();
   }
 
@@ -92,8 +106,11 @@
     }
   });
 
+  // Load tracks when map is ready or vehicle changes
   $effect(() => {
-    if (mapReady && currentPaths.length === 0) loadTracks();
+    if (!mapReady) return;
+    void vehicleId;
+    untrack(() => loadTracks());
   });
 
   function alphaForZoom(zoom: number): number {
@@ -105,8 +122,13 @@
   function updateLayer() {
     if (!overlay || currentPaths.length === 0) return;
     if (highlightedRoute) return; // Don't overwrite highlight
-    const alpha = alphaForZoom(map.getZoom());
-    const [r, g, b] = colorPreset.color;
+    // Use the gradient's base (cold) stop — additive blending naturally
+    // builds toward the hot end where routes overlap
+    const stop = colorPreset.gradient[0];
+    const [r, g, b, a] = stop;
+    const zoomAlpha = alphaForZoom(map.getZoom());
+    // Scale the gradient alpha by the zoom-based alpha
+    const alpha = Math.round((a / 255) * zoomAlpha);
     overlay.setProps({
       layers: [
         new PathLayer({
@@ -167,6 +189,7 @@
     loading = true;
     try {
       const params = new URLSearchParams({ simplify: '0.0005' });
+      if (vehicleId) params.set('vehicle_id', vehicleId);
 
       const res = await fetch(`/api/tracks?${params}`);
       const fc = await res.json();
