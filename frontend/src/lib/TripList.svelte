@@ -73,10 +73,10 @@
         <span class="text-xs text-muted-foreground">
           {formatDate(trip.started_at)} · {formatTime(trip.started_at)}
         </span>
-        <span class="text-xs text-muted-foreground">
-          <span class="font-medium text-foreground">{trip.mileage_km?.toFixed(1)} km</span>
-          · {formatDuration(trip.duration_min)}{#if trip.fuel_used_l && trip.fuel_used_l > 0} · {trip.fuel_used_l.toFixed(1)} L{/if}
-        </span>
+        <div class="text-xs text-right text-muted-foreground leading-snug">
+          <div class="font-medium text-foreground">{trip.mileage_km?.toFixed(1)} km</div>
+          <div>{formatDuration(trip.duration_min)}{#if trip.fuel_used_l && trip.fuel_used_l > 0} · {trip.fuel_used_l.toFixed(1)} L{/if}</div>
+        </div>
       </div>
       <div class="flex items-start gap-1.5 text-sm text-foreground leading-snug">
         <MapPinIcon class="size-3.5 shrink-0 mt-0.5 text-green-400" />

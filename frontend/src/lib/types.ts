@@ -59,24 +59,25 @@ export type Position = {
 
 export type ColorPreset = {
   name: string;
-  color: [number, number, number];
-  gradient: [number, number, number, number][]; // RGBA stops from cold→hot
+  /** Color used on dark/satellite basemaps (additive blending — bright on black) */
+  dark: [number, number, number];
+  /** Color used on light basemaps (normal blending — needs to be dark/saturated) */
+  light: [number, number, number];
 };
 
 export type BasemapPreset = {
   name: string;
-  icon: string;
   style: string | object;
   dark: boolean;
 };
 
 export const COLOR_PRESETS: ColorPreset[] = [
-  { name: 'Fire',    color: [255, 100, 20],  gradient: [] },
-  { name: 'Blue',    color: [40, 120, 255],  gradient: [] },
-  { name: 'Green',   color: [20, 200, 80],   gradient: [] },
-  { name: 'Purple',  color: [180, 60, 240],  gradient: [] },
-  { name: 'Red',     color: [255, 30, 30],   gradient: [] },
-  { name: 'Cyan',    color: [0, 220, 220],   gradient: [] },
+  { name: 'Fire',    dark: [255, 100, 20],   light: [200, 60, 0]   },
+  { name: 'Blue',    dark: [40, 120, 255],   light: [0, 50, 200]   },
+  { name: 'Green',   dark: [20, 200, 80],    light: [0, 120, 40]   },
+  { name: 'Purple',  dark: [180, 60, 240],   light: [100, 10, 160] },
+  { name: 'Red',     dark: [255, 30, 30],    light: [180, 0, 0]    },
+  { name: 'Cyan',    dark: [0, 220, 220],    light: [0, 130, 140]  },
 ];
 
 const ESRI_SATELLITE_STYLE = {
@@ -106,19 +107,16 @@ const ESRI_SATELLITE_STYLE = {
 export const BASEMAP_PRESETS: BasemapPreset[] = [
   {
     name: 'Dark',
-    icon: '🌙',
     style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
     dark: true,
   },
   {
     name: 'Light',
-    icon: '☀️',
     style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
     dark: false,
   },
   {
     name: 'Satellite',
-    icon: '🛰️',
     style: ESRI_SATELLITE_STYLE,
     dark: true,
   },

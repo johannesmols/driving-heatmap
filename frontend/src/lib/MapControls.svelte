@@ -30,21 +30,20 @@
       <!-- Basemap Selector -->
       <div>
         <div class="text-xs text-muted-foreground mb-1.5 font-medium">Basemap</div>
-        <div class="flex gap-1">
-          {#each BASEMAP_PRESETS as preset}
+        <div class="flex rounded-md border border-border overflow-hidden">
+          {#each BASEMAP_PRESETS as preset, i}
             <button
-              class="size-9 flex items-center justify-center rounded-md border text-sm transition-colors cursor-pointer"
+              class="flex-1 py-1.5 text-xs font-medium transition-colors cursor-pointer"
               class:bg-primary={basemap.name === preset.name}
               class:text-primary-foreground={basemap.name === preset.name}
-              class:border-primary={basemap.name === preset.name}
               class:bg-secondary={basemap.name !== preset.name}
               class:text-secondary-foreground={basemap.name !== preset.name}
-              class:border-border={basemap.name !== preset.name}
               class:hover:bg-accent={basemap.name !== preset.name}
+              class:border-r={i < BASEMAP_PRESETS.length - 1}
+              class:border-border={i < BASEMAP_PRESETS.length - 1}
               onclick={() => (basemap = preset)}
-              title={preset.name}
             >
-              {preset.icon}
+              {preset.name}
             </button>
           {/each}
         </div>
@@ -60,7 +59,7 @@
               class:border-foreground={colorPreset.name === preset.name}
               class:border-transparent={colorPreset.name !== preset.name}
               class:scale-110={colorPreset.name === preset.name}
-              style:background-color="rgb({preset.color.join(',')})"
+              style:background-color="rgb({preset.dark.join(',')})"
               onclick={() => (colorPreset = preset)}
               title={preset.name}
               aria-label="{preset.name} color scheme"

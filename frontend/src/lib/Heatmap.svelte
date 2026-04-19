@@ -58,7 +58,17 @@
     try { localStorage.setItem('heatmap-color', colorPreset.name); } catch {}
   });
 
-  // Basemap switching
+  // TODO: Live basemap switching via map.setStyle() does NOT work reliably with
+  // deck.gl MapboxOverlay (even with interleaved:false). Symptoms:
+  //   - setStyle() fires but the map tiles don't visually change until a page refresh
+  //   - Color preset changes DO work (deck.gl layer ID change forces re-render)
+  //   - Sometimes works after a long delay (~5-10s), suggesting an async race condition
+  //   - Tried: interleaved:true (breaks overlay entirely on setStyle), interleaved:false
+  //     with style.load event + overlay re-creation, prevBasemapName guards, etc.
+  // Possible approaches to investigate:
+  //   - Destroy and re-create the entire map instance on basemap change
+  //   - Use MapLibre's transformRequest or addSource/removeSource instead of setStyle
+  //   - Wait for deck.gl fix: https://github.com/visgl/deck.gl/issues/8735
   $effect(() => {
     if (!map || !mapReady) return;
     const style = basemap.style;
@@ -104,16 +114,16 @@
   function updateLayer() {
     if (!overlay || currentPaths.length === 0) return;
     if (highlightedRoute) return;
-    const alpha = alphaForZoom(map.getZoom());
-    const [r, g, b] = colorPreset.color;
     const isDark = basemap.dark;
+    const [r, g, b] = isDark ? colorPreset.dark : colorPreset.light;
+    const alpha = isDark ? alphaForZoom(map.getZoom()) : 160;
     overlay.setProps({
       layers: [
         new PathLayer({
           id: `heatmap-${colorPreset.name}-${isDark ? 'd' : 'l'}`,
           data: currentPaths,
           getPath: (d: any) => d.path,
-          getColor: isDark ? [r, g, b, alpha] : [r, g, b, 160],
+          getColor: [r, g, b, alpha],
           getWidth: isDark ? 2 : 3,
           widthMinPixels: isDark ? 2 : 3,
           parameters: isDark
