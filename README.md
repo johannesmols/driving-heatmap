@@ -47,7 +47,15 @@ password (`DB_PASSWORD`) the first time you connect.
 ## Phase status
 
 - [x] Phase 0 — plan
-- [ ] Phase 1 — sync service + database
+- [x] Phase 1 — sync service + database
 - [ ] Phase 2 — API server
 - [ ] Phase 3 — heatmap frontend
 - [ ] Phase 4 — Docker Compose hardening + TrueNAS deployment
+
+### Phase 1 backfill results
+
+First full sync against the live Connected Cars API (vehicle: Volkswagen up! id=34881):
+
+- 4,535 trips, 695,841 positions
+- Date range: 2022-01-24 → 2026-04-10
+- Initial backfill: 470.8s; incremental re-run: ~1.5s (short-circuits on last-synced timestamp)
