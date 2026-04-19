@@ -10,6 +10,7 @@ x-logging: &logging
 services:
 
   db:
+    container_name: driving-heatmap-db
     image: postgis/postgis:18-3.6-alpine
     environment:
       POSTGRES_DB: heatmap
@@ -28,9 +29,12 @@ services:
         limits:
           memory: 512M
     restart: unless-stopped
+    networks:
+      - npm_network
     <<: *logging
 
   sync:
+    container_name: driving-heatmap-sync
     build: ./sync
     environment:
       DATABASE_URL: postgresql://heatmap:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/heatmap
@@ -46,9 +50,12 @@ services:
         limits:
           memory: 256M
     restart: unless-stopped
+    networks:
+      - npm_network
     <<: *logging
 
   api:
+    container_name: driving-heatmap-api
     build: ./api
     environment:
       DATABASE_URL: postgresql://heatmap:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/heatmap
@@ -60,12 +67,15 @@ services:
         limits:
           memory: 256M
     restart: unless-stopped
+    networks:
+      - npm_network
     <<: *logging
 
   frontend:
+    container_name: driving-heatmap-frontend
     build: ./frontend
-    ports:
-      - "${FRONTEND_PORT:-3000}:80"
+    expose:
+      - "80"
     depends_on:
       - api
     deploy:
@@ -73,7 +83,14 @@ services:
         limits:
           memory: 128M
     restart: unless-stopped
+    networks:
+      - npm_network
     <<: *logging
 
 volumes:
   db_data:
+
+networks:
+  npm_network:
+    name: npm_network
+    external: true
