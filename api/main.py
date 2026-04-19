@@ -65,6 +65,8 @@ async def get_stats():
 async def list_trips(
     from_:  Optional[str] = Query(None, alias="from"),
     to:     Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    sort:   Optional[str] = Query("date_desc"),
     limit:  int           = Query(50, le=500),
     offset: int           = Query(0),
 ):
@@ -76,6 +78,18 @@ async def list_trips(
     if to:
         params.append(to)
         conditions.append(f"started_at <= ${len(params)}")
+    if search:
+        params.append(f"%{search}%")
+        idx = len(params)
+        conditions.append(f"(start_address ILIKE ${idx} OR end_address ILIKE ${idx})")
+
+    sort_clauses = {
+        "date_desc": "started_at DESC",
+        "date_asc": "started_at ASC",
+        "distance_desc": "mileage_km DESC NULLS LAST",
+        "duration_desc": "duration_min DESC NULLS LAST",
+    }
+    order_by = sort_clauses.get(sort, "started_at DESC")
 
     params.extend([limit, offset])
     where = " AND ".join(conditions)
@@ -90,7 +104,7 @@ async def list_trips(
                    accel_high, brake_high, turn_high
             FROM trips
             WHERE {where}
-            ORDER BY started_at DESC
+            ORDER BY {order_by}
             LIMIT ${len(params)-1} OFFSET ${len(params)}
         """, *params)
     return [dict(r) for r in rows]

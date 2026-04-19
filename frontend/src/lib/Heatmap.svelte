@@ -4,6 +4,17 @@
   import { PathLayer } from '@deck.gl/layers';
   import { MapboxOverlay } from '@deck.gl/mapbox';
   import 'maplibre-gl/dist/maplibre-gl.css';
+  import type { GeoJSONLineString, BasemapPreset, ColorPreset } from './types.js';
+  import { BASEMAP_PRESETS, COLOR_PRESETS } from './types.js';
+  import MapControls from './MapControls.svelte';
+
+  let {
+    highlightedRoute = null,
+    onMapResize,
+  }: {
+    highlightedRoute?: GeoJSONLineString | null;
+    onMapResize?: () => void;
+  } = $props();
 
   let mapContainer: HTMLDivElement;
   let overlay: MapboxOverlay;
@@ -13,8 +24,76 @@
   let firstSymbolLayerId: string | undefined;
   let mapReady = $state(false);
 
+  // Persisted preferences
+  let basemap = $state<BasemapPreset>(
+    (() => {
+      try {
+        const saved = localStorage.getItem('heatmap-basemap');
+        if (saved) {
+          const found = BASEMAP_PRESETS.find((p) => p.name === saved);
+          if (found) return found;
+        }
+      } catch {}
+      return BASEMAP_PRESETS[0];
+    })()
+  );
+
+  let colorPreset = $state<ColorPreset>(
+    (() => {
+      try {
+        const saved = localStorage.getItem('heatmap-color');
+        if (saved) {
+          const found = COLOR_PRESETS.find((p) => p.name === saved);
+          if (found) return found;
+        }
+      } catch {}
+      return COLOR_PRESETS[0];
+    })()
+  );
+
+  // Save preferences
   $effect(() => {
-    if (mapReady) loadTracks();
+    try { localStorage.setItem('heatmap-basemap', basemap.name); } catch {}
+  });
+  $effect(() => {
+    try { localStorage.setItem('heatmap-color', colorPreset.name); } catch {}
+  });
+
+  // Basemap switching
+  $effect(() => {
+    if (!map || !mapReady) return;
+    const style = basemap.style;
+    map.setStyle(style as any);
+  });
+
+  // Re-attach overlay after style switch
+  function onStyleData() {
+    const firstSymbol = map.getStyle().layers?.find((l: any) => l.type === 'symbol');
+    firstSymbolLayerId = firstSymbol?.id;
+    updateLayer();
+  }
+
+  // React to color changes
+  $effect(() => {
+    if (mapReady && currentPaths.length > 0) {
+      // Access colorPreset to track it
+      void colorPreset.name;
+      updateLayer();
+    }
+  });
+
+  // React to highlighted route
+  $effect(() => {
+    if (!mapReady) return;
+    if (highlightedRoute) {
+      showHighlightedRoute(highlightedRoute);
+    } else {
+      updateLayer();
+    }
+  });
+
+  $effect(() => {
+    if (mapReady && currentPaths.length === 0) loadTracks();
   });
 
   function alphaForZoom(zoom: number): number {
@@ -25,14 +104,16 @@
 
   function updateLayer() {
     if (!overlay || currentPaths.length === 0) return;
+    if (highlightedRoute) return; // Don't overwrite highlight
     const alpha = alphaForZoom(map.getZoom());
+    const [r, g, b] = colorPreset.color;
     overlay.setProps({
       layers: [
         new PathLayer({
           id: 'heatmap',
           data: currentPaths,
           getPath: (d: any) => d.path,
-          getColor: [255, 80, 20, alpha],
+          getColor: [r, g, b, alpha],
           getWidth: 2,
           widthMinPixels: 2,
           beforeId: firstSymbolLayerId,
@@ -45,6 +126,41 @@
         }),
       ],
     });
+  }
+
+  function showHighlightedRoute(route: GeoJSONLineString) {
+    if (!overlay) return;
+    overlay.setProps({
+      layers: [
+        new PathLayer({
+          id: 'highlight',
+          data: [{ path: route.coordinates }],
+          getPath: (d: any) => d.path,
+          getColor: [255, 255, 255, 220],
+          getWidth: 4,
+          widthMinPixels: 3,
+          beforeId: firstSymbolLayerId,
+        }),
+      ],
+    });
+
+    // Fit map to route bounds
+    const coords = route.coordinates;
+    if (coords.length < 2) return;
+    const bounds = coords.reduce(
+      (b, c) => {
+        b[0] = Math.min(b[0], c[0]);
+        b[1] = Math.min(b[1], c[1]);
+        b[2] = Math.max(b[2], c[0]);
+        b[3] = Math.max(b[3], c[1]);
+        return b;
+      },
+      [Infinity, Infinity, -Infinity, -Infinity]
+    );
+    map.fitBounds(
+      [[bounds[0], bounds[1]], [bounds[2], bounds[3]]],
+      { padding: 60, maxZoom: 15 }
+    );
   }
 
   async function loadTracks() {
@@ -64,10 +180,14 @@
     }
   }
 
+  export function resize() {
+    map?.resize();
+  }
+
   onMount(() => {
     map = new maplibregl.Map({
       container: mapContainer,
-      style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+      style: basemap.style as any,
       center: [10.5, 56.0],
       zoom: 7,
     });
@@ -76,13 +196,15 @@
     map.addControl(overlay as any);
 
     map.on('load', () => {
-      // Find the first symbol layer so tracks render below labels
       const firstSymbol = map.getStyle().layers?.find((l: any) => l.type === 'symbol');
       firstSymbolLayerId = firstSymbol?.id;
       mapReady = true;
     });
 
-    map.on('zoomend', updateLayer);
+    map.on('style.load', onStyleData);
+    map.on('zoomend', () => {
+      if (!highlightedRoute) updateLayer();
+    });
 
     return () => map.remove();
   });
@@ -90,8 +212,9 @@
 
 <div class="relative w-full h-full">
   <div bind:this={mapContainer} class="w-full h-full"></div>
+  <MapControls bind:basemap bind:colorPreset />
   {#if loading}
-    <div class="absolute top-3 left-1/2 -translate-x-1/2 bg-neutral-900/80 text-neutral-100 text-xs px-3 py-1 rounded-full">
+    <div class="absolute top-3 left-1/2 -translate-x-1/2 bg-background/80 text-foreground text-xs px-3 py-1 rounded-full backdrop-blur-sm">
       Loading…
     </div>
   {/if}

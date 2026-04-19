@@ -1,0 +1,160 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import type { Trip, TripDetail } from './types.js';
+  import TripList from './TripList.svelte';
+  import TripDetailView from './TripDetail.svelte';
+  import { Button } from '$lib/components/ui/button/index.js';
+  import { Input } from '$lib/components/ui/input/index.js';
+  import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+  import SearchIcon from '@lucide/svelte/icons/search';
+
+  let {
+    collapsed = $bindable(false),
+    selectedTrip = $bindable<TripDetail | null>(null),
+    onTripSelect,
+  }: {
+    collapsed: boolean;
+    selectedTrip: TripDetail | null;
+    onTripSelect: (trip: Trip) => void;
+  } = $props();
+
+  let trips = $state<Trip[]>([]);
+  let totalLoaded = $state(0);
+  let loading = $state(false);
+  let hasMore = $state(true);
+  let offset = $state(0);
+  let searchQuery = $state('');
+  let searchInput = $state('');
+  let sortBy = $state<'date_desc' | 'date_asc' | 'distance_desc' | 'duration_desc'>('date_desc');
+  let dateFrom = $state('');
+  let dateTo = $state('');
+  let searchTimer: ReturnType<typeof setTimeout>;
+
+  const LIMIT = 50;
+
+  function buildUrl(off: number): string {
+    const params = new URLSearchParams({
+      limit: String(LIMIT),
+      offset: String(off),
+      sort: sortBy,
+    });
+    if (searchQuery.trim()) params.set('search', searchQuery.trim());
+    if (dateFrom) params.set('from', `${dateFrom}T00:00:00Z`);
+    if (dateTo) params.set('to', `${dateTo}T23:59:59Z`);
+    return `/api/trips?${params}`;
+  }
+
+  async function loadTrips(reset = false) {
+    if (loading) return;
+    if (reset) {
+      offset = 0;
+      hasMore = true;
+      trips = [];
+    }
+    loading = true;
+    try {
+      const res = await fetch(buildUrl(offset));
+      const batch: Trip[] = await res.json();
+      if (batch.length < LIMIT) hasMore = false;
+      trips = reset ? batch : [...trips, ...batch];
+      offset = trips.length;
+      totalLoaded = trips.length;
+    } finally {
+      loading = false;
+    }
+  }
+
+  onMount(() => {
+    loadTrips(true);
+  });
+
+  // Debounced search
+  function handleSearchInput(e: Event) {
+    searchInput = (e.target as HTMLInputElement).value;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchQuery = searchInput;
+    }, 350);
+  }
+
+  // Re-fetch when filters change
+  $effect(() => {
+    // Track all filter dependencies
+    void searchQuery;
+    void sortBy;
+    void dateFrom;
+    void dateTo;
+    loadTrips(true);
+  });
+
+  function handleBack() {
+    selectedTrip = null;
+  }
+</script>
+
+<div
+  class="flex h-full shrink-0 transition-[width] duration-300 ease-in-out border-r border-border bg-background"
+  style:width={collapsed ? '0px' : '380px'}
+>
+  <div class="flex flex-col h-full w-[380px] min-w-[380px] overflow-hidden">
+    {#if selectedTrip}
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
+        <Button variant="ghost" size="icon" onclick={handleBack} class="size-8">
+          <ArrowLeftIcon class="size-4" />
+        </Button>
+        <span class="text-sm font-medium text-foreground">Trip Details</span>
+      </div>
+      <TripDetailView detail={selectedTrip} />
+    {:else}
+      <div class="px-3 py-2 border-b border-border space-y-2 shrink-0">
+        <!-- Sort row -->
+        <div class="flex items-center justify-between">
+          <span class="text-sm font-medium text-foreground">
+            {totalLoaded}{hasMore ? '+' : ''} trip{totalLoaded !== 1 ? 's' : ''}
+          </span>
+          <select
+            bind:value={sortBy}
+            class="text-xs bg-secondary text-secondary-foreground rounded px-2 py-1 border border-border"
+          >
+            <option value="date_desc">Newest first</option>
+            <option value="date_asc">Oldest first</option>
+            <option value="distance_desc">Longest distance</option>
+            <option value="duration_desc">Longest duration</option>
+          </select>
+        </div>
+        <!-- Search -->
+        <div class="relative">
+          <SearchIcon class="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Search addresses…"
+            value={searchInput}
+            oninput={handleSearchInput}
+            class="h-8 text-sm pl-7"
+          />
+        </div>
+        <!-- Date range -->
+        <div class="flex items-center gap-1.5">
+          <input
+            type="date"
+            bind:value={dateFrom}
+            class="flex-1 text-xs bg-secondary text-secondary-foreground rounded px-2 py-1 border border-border"
+          />
+          <span class="text-xs text-muted-foreground">→</span>
+          <input
+            type="date"
+            bind:value={dateTo}
+            class="flex-1 text-xs bg-secondary text-secondary-foreground rounded px-2 py-1 border border-border"
+          />
+        </div>
+      </div>
+      <TripList
+        {trips}
+        {loading}
+        {hasMore}
+        onLoadMore={() => loadTrips()}
+        onSelect={onTripSelect}
+      />
+    {/if}
+  </div>
+</div>
