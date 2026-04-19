@@ -69,22 +69,25 @@
       class="w-full text-left px-3 py-2.5 hover:bg-accent/50 transition-colors cursor-pointer"
       onclick={() => onSelect(trip)}
     >
-      <div class="flex items-center justify-between mb-1">
-        <span class="text-xs text-muted-foreground">
-          {formatDate(trip.started_at)} · {formatTime(trip.started_at)}
-        </span>
-        <div class="text-xs text-right text-muted-foreground leading-snug">
-          <div class="font-medium text-foreground">{trip.mileage_km?.toFixed(1)} km</div>
-          <div>{formatDuration(trip.duration_min)}{#if trip.fuel_used_l && trip.fuel_used_l > 0} · {trip.fuel_used_l.toFixed(1)} L{/if}</div>
+      <div class="flex gap-3">
+        <div class="flex-1 min-w-0">
+          <div class="text-xs text-muted-foreground mb-1">
+            {formatDate(trip.started_at)} · {formatTime(trip.started_at)}
+          </div>
+          <div class="flex items-start gap-1.5 text-sm text-foreground leading-snug">
+            <MapPinIcon class="size-3.5 shrink-0 mt-0.5 text-green-400" />
+            <span class="truncate">{truncate(trip.start_address)}</span>
+          </div>
+          <div class="flex items-start gap-1.5 text-xs text-muted-foreground mt-0.5">
+            <FlagIcon class="size-3 shrink-0 mt-0.5 text-red-400" />
+            <span class="truncate">{truncate(trip.end_address)}</span>
+          </div>
         </div>
-      </div>
-      <div class="flex items-start gap-1.5 text-sm text-foreground leading-snug">
-        <MapPinIcon class="size-3.5 shrink-0 mt-0.5 text-green-400" />
-        <span>{truncate(trip.start_address)}</span>
-      </div>
-      <div class="flex items-start gap-1.5 text-xs text-muted-foreground mt-0.5">
-        <FlagIcon class="size-3 shrink-0 mt-0.5 text-red-400" />
-        <span>{truncate(trip.end_address)}</span>
+        <div class="text-xs text-right text-muted-foreground shrink-0 pt-0.5">
+          <div class="font-medium text-foreground">{trip.mileage_km?.toFixed(1)} km</div>
+          <div>{formatDuration(trip.duration_min)}</div>
+          {#if trip.fuel_used_l && trip.fuel_used_l > 0}<div>{trip.fuel_used_l.toFixed(1)} L</div>{/if}
+        </div>
       </div>
     </button>
     <Separator />

@@ -149,7 +149,7 @@
           id: 'highlight',
           data: [{ path: route.coordinates }],
           getPath: (d: any) => d.path,
-          getColor: [255, 255, 255, 220],
+          getColor: basemap.dark ? [255, 255, 255, 220] : [0, 0, 0, 200],
           getWidth: 4,
           widthMinPixels: 3,
         }),

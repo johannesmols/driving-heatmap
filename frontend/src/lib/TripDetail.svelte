@@ -36,7 +36,7 @@
   type EventItem = { label: string; high: number; med: number; low?: number };
 
   let events = $derived<EventItem[]>([
-    { label: 'Accel', high: detail.accel_high, med: detail.accel_medium, low: detail.accel_low },
+    { label: 'Acceleration', high: detail.accel_high, med: detail.accel_medium, low: detail.accel_low },
     { label: 'Brake', high: detail.brake_high, med: detail.brake_medium, low: detail.brake_low },
     { label: 'Turn', high: detail.turn_high, med: detail.turn_medium },
   ]);

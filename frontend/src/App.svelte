@@ -105,8 +105,8 @@
       {#if stats}
         <div class="flex items-center gap-1.5">
           <RouteIcon class="size-3.5 text-muted-foreground" />
-          <span class="font-semibold">{stats.trip_count.toLocaleString()} trips</span>
-          <span class="text-muted-foreground">·</span>
+          <span>{stats.trip_count.toLocaleString()} trips</span>
+          <span class="text-muted-foreground">covering</span>
           <span>{Number(stats.total_km).toLocaleString()} km</span>
         </div>
         <span class="text-border">|</span>
