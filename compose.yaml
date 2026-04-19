@@ -98,6 +98,7 @@ services:
       PGADMIN_CONFIG_SERVER_MODE: "True"
       PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
       PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "False"
+      PGADMIN_CONFIG_WTF_CSRF_SSL_STRICT: "False"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
       - ./db/pgadmin/servers.json:/pgadmin4/servers.json:ro
