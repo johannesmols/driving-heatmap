@@ -58,27 +58,19 @@
     try { localStorage.setItem('heatmap-color', colorPreset.name); } catch {}
   });
 
-  // Basemap switching — interleaved:false means deck.gl has its own canvas,
-  // so setStyle() doesn't affect the overlay at all
-  let prevBasemapName: string | null = null;
+  // Basemap switching
   $effect(() => {
     if (!map || !mapReady) return;
-    const name = basemap.name;
-    if (prevBasemapName === null) {
-      prevBasemapName = name;
-      return;
-    }
-    if (name === prevBasemapName) return;
-    prevBasemapName = name;
-    map.setStyle(basemap.style as any);
+    const style = basemap.style;
+    map.setStyle(style as any);
   });
 
-  // React to color changes
+  // React to color or basemap changes (basemap.dark affects blending)
   $effect(() => {
-    if (mapReady && currentPaths.length > 0) {
-      void colorPreset.name;
-      updateLayer();
-    }
+    if (!mapReady || currentPaths.length === 0) return;
+    const _name = colorPreset.name;
+    const _dark = basemap.dark;
+    updateLayer();
   });
 
   // React to highlighted route
@@ -114,22 +106,26 @@
     if (highlightedRoute) return;
     const alpha = alphaForZoom(map.getZoom());
     const [r, g, b] = colorPreset.color;
+    const isDark = basemap.dark;
     overlay.setProps({
       layers: [
         new PathLayer({
-          id: 'heatmap',
+          id: `heatmap-${colorPreset.name}-${isDark ? 'd' : 'l'}`,
           data: currentPaths,
           getPath: (d: any) => d.path,
-          getColor: [r, g, b, alpha],
-          updateTriggers: { getColor: [r, g, b, alpha] },
-          getWidth: 2,
-          widthMinPixels: 2,
-          parameters: {
-            depthWriteEnabled: false,
-            blendColorSrcFactor: 'src-alpha',
-            blendColorDstFactor: 'one',
-            blendColorOperation: 'add',
-          },
+          getColor: isDark ? [r, g, b, alpha] : [r, g, b, 160],
+          getWidth: isDark ? 2 : 3,
+          widthMinPixels: isDark ? 2 : 3,
+          parameters: isDark
+            ? {
+                depthWriteEnabled: false,
+                blendColorSrcFactor: 'src-alpha',
+                blendColorDstFactor: 'one',
+                blendColorOperation: 'add',
+              }
+            : {
+                depthWriteEnabled: false,
+              },
         }),
       ],
     });

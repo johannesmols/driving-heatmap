@@ -67,6 +67,7 @@ export type BasemapPreset = {
   name: string;
   icon: string;
   style: string | object;
+  dark: boolean;
 };
 
 export const COLOR_PRESETS: ColorPreset[] = [
@@ -107,15 +108,18 @@ export const BASEMAP_PRESETS: BasemapPreset[] = [
     name: 'Dark',
     icon: '🌙',
     style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+    dark: true,
   },
   {
     name: 'Light',
     icon: '☀️',
     style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
+    dark: false,
   },
   {
     name: 'Satellite',
     icon: '🛰️',
     style: ESRI_SATELLITE_STYLE,
+    dark: true,
   },
 ];
