@@ -20,5 +20,18 @@ services:
       retries: 5
     restart: unless-stopped
 
+  sync:
+    build: ./sync
+    environment:
+      DATABASE_URL: postgresql://heatmap:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/heatmap
+      CC_EMAIL: ${CC_EMAIL:?CC_EMAIL must be set in .env}
+      CC_PASSWORD: ${CC_PASSWORD:?CC_PASSWORD must be set in .env}
+      CC_NAMESPACE: ${CC_NAMESPACE:-semler:minvolkswagen}
+      SYNC_INTERVAL_HOURS: ${SYNC_INTERVAL_HOURS:-6}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   db_data:
