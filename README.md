@@ -32,12 +32,17 @@ docker compose up -d --build sync
 docker compose logs -f sync        # watch the initial backfill
 ```
 
-Inspect the database:
+Inspect the database via psql:
 
 ```bash
 docker compose exec db psql -U heatmap -d heatmap -c "\dt"
 docker compose exec db psql -U heatmap -d heatmap -c "SELECT COUNT(*) FROM trips;"
 ```
+
+Or open pgAdmin at <http://localhost:5050>. Log in with `PGADMIN_EMAIL` /
+`PGADMIN_PASSWORD` from `.env`. The `driving-heatmap` server is pre-registered
+via [db/pgadmin/servers.json](db/pgadmin/servers.json); enter the PostgreSQL
+password (`DB_PASSWORD`) the first time you connect.
 
 ## Phase status
 

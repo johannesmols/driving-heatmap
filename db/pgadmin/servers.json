@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "driving-heatmap",
+      "Group": "Servers",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "heatmap",
+      "Username": "heatmap",
+      "SSLMode": "prefer"
+    }
+  }
+}
