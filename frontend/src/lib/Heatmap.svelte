@@ -11,11 +11,9 @@
   let {
     highlightedRoute = null,
     vehicleId = null,
-    onMapResize,
   }: {
     highlightedRoute?: GeoJSONLineString | null;
     vehicleId?: string | null;
-    onMapResize?: () => void;
   } = $props();
 
   let mapContainer: HTMLDivElement;
@@ -23,7 +21,6 @@
   let map: maplibregl.Map;
   let loading = $state(false);
   let currentPaths: any[] = [];
-  let firstSymbolLayerId: string | undefined;
   let mapReady = $state(false);
 
   // Persisted preferences
@@ -61,13 +58,13 @@
     try { localStorage.setItem('heatmap-color', colorPreset.name); } catch {}
   });
 
-  // Basemap switching — skip the initial run (map already has the style)
+  // Basemap switching — interleaved:false means deck.gl has its own canvas,
+  // so setStyle() doesn't affect the overlay at all
   let prevBasemapName: string | null = null;
   $effect(() => {
     if (!map || !mapReady) return;
     const name = basemap.name;
     if (prevBasemapName === null) {
-      // First run — just record, don't setStyle (map was created with this style)
       prevBasemapName = name;
       return;
     }
@@ -76,21 +73,9 @@
     map.setStyle(basemap.style as any);
   });
 
-  // Re-attach overlay after style switch
-  function onStyleData() {
-    const firstSymbol = map.getStyle().layers?.find((l: any) => l.type === 'symbol');
-    firstSymbolLayerId = firstSymbol?.id;
-    // Re-create and re-add the overlay — setStyle disconnects the old one
-    map.removeControl(overlay as any);
-    overlay = new MapboxOverlay({ interleaved: true, layers: [] });
-    map.addControl(overlay as any);
-    updateLayer();
-  }
-
   // React to color changes
   $effect(() => {
     if (mapReady && currentPaths.length > 0) {
-      // Access colorPreset to track it
       void colorPreset.name;
       updateLayer();
     }
@@ -107,9 +92,14 @@
   });
 
   // Load tracks when map is ready or vehicle changes
+  // Skip loading until vehicleId is actually set (avoids double-load)
+  let initialLoadDone = false;
   $effect(() => {
     if (!mapReady) return;
-    void vehicleId;
+    const vid = vehicleId;
+    // Wait for vehicleId to be set before first load
+    if (!initialLoadDone && vid === null) return;
+    initialLoadDone = true;
     untrack(() => loadTracks());
   });
 
@@ -121,14 +111,9 @@
 
   function updateLayer() {
     if (!overlay || currentPaths.length === 0) return;
-    if (highlightedRoute) return; // Don't overwrite highlight
-    // Use the gradient's base (cold) stop — additive blending naturally
-    // builds toward the hot end where routes overlap
-    const stop = colorPreset.gradient[0];
-    const [r, g, b, a] = stop;
-    const zoomAlpha = alphaForZoom(map.getZoom());
-    // Scale the gradient alpha by the zoom-based alpha
-    const alpha = Math.round((a / 255) * zoomAlpha);
+    if (highlightedRoute) return;
+    const alpha = alphaForZoom(map.getZoom());
+    const [r, g, b] = colorPreset.color;
     overlay.setProps({
       layers: [
         new PathLayer({
@@ -138,7 +123,6 @@
           getColor: [r, g, b, alpha],
           getWidth: 2,
           widthMinPixels: 2,
-          beforeId: firstSymbolLayerId,
           parameters: {
             depthWriteEnabled: false,
             blendColorSrcFactor: 'src-alpha',
@@ -161,12 +145,10 @@
           getColor: [255, 255, 255, 220],
           getWidth: 4,
           widthMinPixels: 3,
-          beforeId: firstSymbolLayerId,
         }),
       ],
     });
 
-    // Fit map to route bounds
     const coords = route.coordinates;
     if (coords.length < 2) return;
     const bounds = coords.reduce(
@@ -215,16 +197,15 @@
       zoom: 7,
     });
 
-    overlay = new MapboxOverlay({ interleaved: true, layers: [] });
+    // interleaved: false — deck.gl renders on its own canvas on top of the map.
+    // This is immune to setStyle() calls (basemap switching works reliably).
+    overlay = new MapboxOverlay({ interleaved: false, layers: [] });
     map.addControl(overlay as any);
 
     map.on('load', () => {
-      const firstSymbol = map.getStyle().layers?.find((l: any) => l.type === 'symbol');
-      firstSymbolLayerId = firstSymbol?.id;
       mapReady = true;
     });
 
-    map.on('style.load', onStyleData);
     map.on('zoomend', () => {
       if (!highlightedRoute) updateLayer();
     });

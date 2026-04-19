@@ -83,23 +83,16 @@
     {#if vehicles.length > 0}
       <div class="flex items-center gap-2 shrink-0">
         <CarIcon class="size-4 text-muted-foreground" />
-        {#if vehicles.length === 1}
-          <span class="font-medium">{selectedVehicle?.license_plate ?? ''}</span>
-          <span class="text-muted-foreground">
-            {selectedVehicle?.make} {selectedVehicle?.model}{selectedVehicle?.year ? ` (${selectedVehicle.year})` : ''}
-          </span>
-        {:else}
-          <select
-            bind:value={selectedVehicleId}
-            class="bg-secondary text-secondary-foreground text-sm rounded px-2 py-1 border border-border"
-          >
-            {#each vehicles as v}
-              <option value={v.id}>
-                {v.license_plate ?? v.id} — {v.make} {v.model}{v.year ? ` (${v.year})` : ''}
-              </option>
-            {/each}
-          </select>
-        {/if}
+        <select
+          bind:value={selectedVehicleId}
+          class="bg-secondary text-secondary-foreground text-sm rounded px-2 py-1 border border-border"
+        >
+          {#each vehicles as v}
+            <option value={v.id}>
+              {v.license_plate ?? v.id} — {v.make} {v.model}{v.year ? ` (${v.year})` : ''}
+            </option>
+          {/each}
+        </select>
       </div>
       <span class="text-border">|</span>
     {/if}
