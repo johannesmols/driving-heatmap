@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { untrack } from 'svelte';
   import type { Trip, TripDetail } from './types.js';
   import TripList from './TripList.svelte';
   import TripDetailView from './TripDetail.svelte';
@@ -64,10 +64,6 @@
     }
   }
 
-  onMount(() => {
-    loadTrips(true);
-  });
-
   // Debounced search
   function handleSearchInput(e: Event) {
     searchInput = (e.target as HTMLInputElement).value;
@@ -79,12 +75,13 @@
 
   // Re-fetch when filters change
   $effect(() => {
-    // Track all filter dependencies
+    // Track only filter dependencies
     void searchQuery;
     void sortBy;
     void dateFrom;
     void dateTo;
-    loadTrips(true);
+    // Don't track any state mutated inside loadTrips
+    untrack(() => loadTrips(true));
   });
 
   function handleBack() {
