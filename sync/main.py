@@ -17,9 +17,18 @@ CC_GRAPHQL_URL = "https://api.connectedcars.io/graphql"
 # HTTP helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def authenticate(email: str, password: str) -> str:
-    """Returns a JWT token. Call at the start of every sync run — tokens last ~1 hour."""
-    r = httpx.post(CC_AUTH_URL, json={"email": email, "password": password}, timeout=15)
+def authenticate(email: str, password: str, namespace: str) -> str:
+    """Returns a JWT token. Call at the start of every sync run — tokens last ~1 hour.
+
+    The auth endpoint requires the X-Organization-Namespace header; without it the
+    server responds 400 {"type":"namespace_not_found"}.
+    """
+    r = httpx.post(
+        CC_AUTH_URL,
+        json={"email": email, "password": password},
+        headers={"X-Organization-Namespace": namespace},
+        timeout=15,
+    )
     r.raise_for_status()
     return r.json()["token"]
 
@@ -87,7 +96,7 @@ query GetTrips($before: Cursor) {
             turnHigh turnMedium
             positions { latitude longitude time speed direction eph }
           }
-          pageInfo { hasNextPage endCursor }
+          pageInfo { hasPreviousPage startCursor }
         }
       }
     }
@@ -237,9 +246,12 @@ def sync_vehicle(conn, token: str, namespace: str, vehicle: dict):
         conn.commit()
         log.info(f"  {trips_written} trips, {positions_written} positions synced so far.")
 
-        if not page_info["hasNextPage"]:
+        # Paging backwards through history: hasPreviousPage tells us if older
+        # trips exist; startCursor points at the oldest trip in the current
+        # window. Passing it as `before:` fetches the page that precedes it.
+        if not page_info["hasPreviousPage"]:
             break
-        cursor = page_info["endCursor"]
+        cursor = page_info["startCursor"]
 
     log.info(f"Vehicle sync done: {trips_written} trips, {positions_written} positions.")
 
@@ -255,7 +267,7 @@ def run_sync():
     db_url    = os.environ["DATABASE_URL"]
 
     try:
-        token = authenticate(email, password)
+        token = authenticate(email, password, namespace)
         log.info("Authenticated.")
 
         data     = graphql(token, namespace, GET_VEHICLES_QUERY)
