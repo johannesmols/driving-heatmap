@@ -5,15 +5,3 @@ html, body, #app {
   margin: 0;
   background: #1a1a2e;
 }
-
-/* flatpickr overrides for dark header integration */
-.flatpickr-input.active {
-  border-color: #f97316 !important;
-}
-.flatpickr-day.selected,
-.flatpickr-day.startRange,
-.flatpickr-day.endRange,
-.flatpickr-day.inRange {
-  background: #f97316 !important;
-  border-color: #f97316 !important;
-}

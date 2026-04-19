@@ -5,8 +5,6 @@
   import { MapboxOverlay } from '@deck.gl/mapbox';
   import 'maplibre-gl/dist/maplibre-gl.css';
 
-  let { from, to }: { from?: string; to?: string } = $props();
-
   let mapContainer: HTMLDivElement;
   let overlay: MapboxOverlay;
   let map: maplibregl.Map;
@@ -16,8 +14,6 @@
   let mapReady = $state(false);
 
   $effect(() => {
-    void from;
-    void to;
     if (mapReady) loadTracks();
   });
 
@@ -55,8 +51,6 @@
     loading = true;
     try {
       const params = new URLSearchParams({ simplify: '0.0005' });
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
 
       const res = await fetch(`/api/tracks?${params}`);
       const fc = await res.json();
