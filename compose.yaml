@@ -33,6 +33,17 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  api:
+    build: ./api
+    ports:
+      - "8000:8000"           # local curl / frontend dev access
+    environment:
+      DATABASE_URL: postgresql://heatmap:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/heatmap
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   pgadmin:
     image: dpage/pgadmin4:latest
     ports:
