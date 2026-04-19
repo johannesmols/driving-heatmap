@@ -87,8 +87,34 @@ services:
       - npm_network
     <<: *logging
 
+  pgadmin:
+    container_name: driving-heatmap-pgadmin
+    image: dpage/pgadmin4:latest
+    expose:
+      - "80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?PGADMIN_PASSWORD must be set in .env}
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./db/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    restart: unless-stopped
+    networks:
+      - npm_network
+    <<: *logging
+
 volumes:
   db_data:
+  pgadmin_data:
 
 networks:
   npm_network:
