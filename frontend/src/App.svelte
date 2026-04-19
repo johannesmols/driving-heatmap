@@ -2,12 +2,15 @@
   import { onMount, untrack } from 'svelte';
   import Heatmap from './lib/Heatmap.svelte';
   import TripSidebar from './lib/TripSidebar.svelte';
+  import InsightsPanel from './lib/InsightsPanel.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import MenuIcon from '@lucide/svelte/icons/menu';
   import PanelLeftCloseIcon from '@lucide/svelte/icons/panel-left-close';
   import CarIcon from '@lucide/svelte/icons/car';
   import RouteIcon from '@lucide/svelte/icons/route';
   import CalendarIcon from '@lucide/svelte/icons/calendar-range';
+  import BarChart3Icon from '@lucide/svelte/icons/bar-chart-3';
+  import XIcon from '@lucide/svelte/icons/x';
   import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
   import type { Trip, TripDetail, GeoJSONLineString, Vehicle } from './lib/types.js';
 
@@ -23,9 +26,14 @@
   let vehicles = $state<Vehicle[]>([]);
   let selectedVehicleId = $state<string | null>(null);
   let sidebarCollapsed = $state(false);
+  let insightsOpen = $state(false);
   let selectedTrip = $state<TripDetail | null>(null);
   let highlightedRoute = $state<GeoJSONLineString | null>(null);
   let heatmapRef: Heatmap;
+
+  // Global date range — filters both trip list and heatmap
+  let dateFrom = $state('');
+  let dateTo = $state('');
 
   onMount(async () => {
     const vRes = await fetch('/api/vehicles');
@@ -35,15 +43,22 @@
     }
   });
 
-  // Reload stats when vehicle changes
+  // Reload stats when vehicle or date range changes
   $effect(() => {
     const vid = selectedVehicleId;
+    const df = dateFrom;
+    const dt = dateTo;
     if (vid === null && vehicles.length === 0) return;
-    const params = vid ? `?vehicle_id=${encodeURIComponent(vid)}` : '';
-    fetch(`/api/stats${params}`).then(r => r.ok ? r.json() : null).then(d => { if (d) stats = d; });
+    const params = new URLSearchParams();
+    if (vid) params.set('vehicle_id', vid);
+    if (df) params.set('from', `${df}T00:00:00Z`);
+    if (dt) params.set('to', `${dt}T23:59:59Z`);
+    const qs = params.toString();
+    fetch(`/api/stats${qs ? '?' + qs : ''}`).then(r => r.ok ? r.json() : null).then(d => { if (d) stats = d; });
   });
 
   let selectedVehicle = $derived(vehicles.find(v => v.id === selectedVehicleId) ?? null);
+  let hasDateFilter = $derived(dateFrom !== '' || dateTo !== '');
 
   async function handleTripSelect(trip: Trip) {
     const res = await fetch(`/api/trips/${encodeURIComponent(trip.id)}`);
@@ -53,6 +68,11 @@
     highlightedRoute = detail.route;
   }
 
+  function clearDateFilter() {
+    dateFrom = '';
+    dateTo = '';
+  }
+
   // Clear selection when going back
   $effect(() => {
     if (!selectedTrip) {
@@ -60,9 +80,10 @@
     }
   });
 
-  // Resize map when sidebar toggles
+  // Resize map when sidebar or insights panel toggles
   $effect(() => {
     void sidebarCollapsed;
+    void insightsOpen;
     setTimeout(() => heatmapRef?.resize(), 310);
   });
 </script>
@@ -120,16 +141,61 @@
         <span class="text-muted-foreground">Loading stats&hellip;</span>
       {/if}
     </div>
+
+    <!-- Date range filter (global — filters heatmap + trip list) -->
+    <span class="text-border">|</span>
+    <div class="flex items-center gap-1.5 shrink-0">
+      <input
+        type="date"
+        bind:value={dateFrom}
+        class="text-xs bg-secondary text-secondary-foreground rounded px-2 py-1 border border-border"
+      />
+      <span class="text-xs text-muted-foreground">&rarr;</span>
+      <input
+        type="date"
+        bind:value={dateTo}
+        class="text-xs bg-secondary text-secondary-foreground rounded px-2 py-1 border border-border"
+      />
+      {#if hasDateFilter}
+        <Button variant="ghost" size="icon" onclick={clearDateFilter} class="size-6 shrink-0">
+          <XIcon class="size-3" />
+        </Button>
+      {/if}
+    </div>
+
+    <!-- Spacer -->
+    <div class="flex-1"></div>
+
+    <!-- Insights toggle -->
+    <Button
+      variant={insightsOpen ? 'default' : 'ghost'}
+      size="sm"
+      onclick={() => (insightsOpen = !insightsOpen)}
+      class="gap-1.5 shrink-0"
+    >
+      <BarChart3Icon class="size-4" />
+      <span class="text-xs">Insights</span>
+    </Button>
   </header>
+
   <div class="flex-1 min-h-0 flex relative">
     <TripSidebar
       bind:collapsed={sidebarCollapsed}
       bind:selectedTrip
       vehicleId={selectedVehicleId}
+      {dateFrom}
+      {dateTo}
       onTripSelect={handleTripSelect}
     />
-    <div class="flex-1 min-w-0">
-      <Heatmap bind:this={heatmapRef} {highlightedRoute} vehicleId={selectedVehicleId} />
+    <div class="flex-1 min-w-0 flex flex-col">
+      <div class="flex-1 min-h-0">
+        <Heatmap bind:this={heatmapRef} {highlightedRoute} vehicleId={selectedVehicleId} {dateFrom} {dateTo} />
+      </div>
+      {#if insightsOpen}
+        <div class="h-[45vh] shrink-0 transition-[height] duration-300 ease-in-out overflow-hidden">
+          <InsightsPanel vehicleId={selectedVehicleId} />
+        </div>
+      {/if}
     </div>
   </div>
 </div>

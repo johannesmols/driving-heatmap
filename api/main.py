@@ -1,12 +1,11 @@
 import json
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, date
 from typing import Optional
 
 import asyncpg
 from fastapi import FastAPI, Query
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 pool: asyncpg.Pool = None
@@ -43,20 +42,33 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS middleware needed — nginx proxies /api/ as same-origin.
+# During local dev, vite.config.ts proxies /api to localhost:8000.
+
+
+@app.get("/api/health")
+async def health():
+    async with pool.acquire() as conn:
+        await conn.fetchval("SELECT 1")
+    return {"status": "ok"}
 
 
 @app.get("/api/stats")
-async def get_stats(vehicle_id: Optional[str] = Query(None)):
+async def get_stats(
+    vehicle_id: Optional[str] = Query(None),
+    from_:      Optional[str] = Query(None, alias="from"),
+    to:         Optional[str] = Query(None),
+):
     conditions, params = ["1=1"], []
     if vehicle_id:
         params.append(vehicle_id)
         conditions.append(f"vehicle_id = ${len(params)}")
+    if from_:
+        params.append(parse_dt(from_))
+        conditions.append(f"started_at >= ${len(params)}")
+    if to:
+        params.append(parse_dt(to))
+        conditions.append(f"started_at <= ${len(params)}")
     where = " AND ".join(conditions)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(f"""
@@ -68,7 +80,7 @@ async def get_stats(vehicle_id: Optional[str] = Query(None)):
                 MAX(started_at)                     AS newest_trip,
                 (SELECT COUNT(*) FROM positions p
                  JOIN trips t2 ON p.trip_id = t2.id
-                 WHERE {where.replace('vehicle_id', 't2.vehicle_id')}) AS position_count
+                 WHERE {where.replace('vehicle_id', 't2.vehicle_id').replace('started_at', 't2.started_at')}) AS position_count
             FROM trips
             WHERE {where}
         """, *params)
@@ -220,7 +232,8 @@ async def get_tracks(
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(f"""
-            SELECT id, started_at, mileage_km,
+            SELECT id, started_at, mileage_km, duration_min,
+                   start_address, end_address,
                    ST_AsGeoJSON({geom})::json AS geometry
             FROM trips
             WHERE {where}
@@ -235,6 +248,9 @@ async def get_tracks(
             "properties": {
                 "started_at": row["started_at"].isoformat(),
                 "mileage_km": row["mileage_km"],
+                "duration_min": row["duration_min"],
+                "start_address": row["start_address"],
+                "end_address": row["end_address"],
             },
         }
         for row in rows
@@ -242,3 +258,147 @@ async def get_tracks(
     ]
 
     return {"type": "FeatureCollection", "features": features}
+
+
+@app.get("/api/insights")
+async def get_insights(
+    vehicle_id: Optional[str] = Query(None),
+    period:     str           = Query("year", description="30d, month, or year"),
+    year:       Optional[int] = Query(None),
+    month:      Optional[int] = Query(None),
+):
+    now = datetime.now()
+    if period == "30d":
+        dt_from = now - timedelta(days=30)
+        dt_to = now
+        trunc = "day"
+    elif period == "month":
+        y = year or now.year
+        m = month or now.month
+        dt_from = datetime(y, m, 1)
+        if m == 12:
+            dt_to = datetime(y + 1, 1, 1)
+        else:
+            dt_to = datetime(y, m + 1, 1)
+        trunc = "week"
+    else:  # year
+        y = year or now.year
+        dt_from = datetime(y, 1, 1)
+        dt_to = datetime(y + 1, 1, 1)
+        trunc = "month"
+
+    total_period_hours = (dt_to - dt_from).total_seconds() / 3600
+
+    conditions, params = ["1=1"], []
+    if vehicle_id:
+        params.append(vehicle_id)
+        conditions.append(f"vehicle_id = ${len(params)}")
+    params.append(dt_from)
+    conditions.append(f"started_at >= ${len(params)}")
+    params.append(dt_to)
+    conditions.append(f"started_at < ${len(params)}")
+    where = " AND ".join(conditions)
+
+    async with pool.acquire() as conn:
+        summary = await conn.fetchrow(f"""
+            SELECT
+                COALESCE(SUM(duration_min), 0)::int         AS total_driving_time_min,
+                ROUND(COALESCE(SUM(mileage_km), 0)::numeric, 1) AS total_distance_km,
+                ROUND(COALESCE(MAX(mileage_km), 0)::numeric, 1) AS longest_trip_km,
+                COUNT(*)::int                                AS trip_count,
+                ROUND(COALESCE(SUM(fuel_used_l), 0)::numeric, 1) AS total_fuel_l,
+                COALESCE(SUM(idle_time_s), 0)::int           AS total_idle_time_s
+            FROM trips
+            WHERE {where}
+        """, *params)
+
+        buckets = await conn.fetch(f"""
+            SELECT
+                date_trunc('{trunc}', started_at) AS bucket,
+                ROUND(COALESCE(SUM(mileage_km), 0)::numeric, 1) AS distance_km,
+                COALESCE(SUM(duration_min), 0)::int AS driving_time_min,
+                COUNT(*)::int AS trip_count
+            FROM trips
+            WHERE {where}
+            GROUP BY bucket
+            ORDER BY bucket
+        """, *params)
+
+    driving_hours = (summary["total_driving_time_min"] or 0) / 60
+    driving_pct = round(driving_hours / total_period_hours * 100, 1) if total_period_hours > 0 else 0
+
+    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    def bucket_label(dt_val, trunc_mode):
+        if trunc_mode == "month":
+            return month_names[dt_val.month - 1]
+        elif trunc_mode == "week":
+            return f"W{dt_val.isocalendar()[1]}"
+        else:
+            return dt_val.strftime("%d %b")
+
+    return {
+        "period": {"type": period, "year": year or now.year, "month": month},
+        "summary": dict(summary),
+        "parked_vs_driving": {
+            "driving_pct": driving_pct,
+            "parked_pct": round(100 - driving_pct, 1),
+            "total_period_hours": round(total_period_hours, 1),
+        },
+        "buckets": [
+            {
+                "label": bucket_label(row["bucket"], trunc),
+                "distance_km": float(row["distance_km"]),
+                "driving_time_min": row["driving_time_min"],
+                "trip_count": row["trip_count"],
+            }
+            for row in buckets
+        ],
+    }
+
+
+@app.get("/api/odometer")
+async def get_odometer(vehicle_id: Optional[str] = Query(None)):
+    conditions, params = ["end_odometer_km IS NOT NULL"], []
+    if vehicle_id:
+        params.append(vehicle_id)
+        conditions.append(f"vehicle_id = ${len(params)}")
+    where = " AND ".join(conditions)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(f"""
+            SELECT started_at::date AS date, MAX(end_odometer_km) AS km
+            FROM trips
+            WHERE {where}
+            GROUP BY started_at::date
+            ORDER BY date
+        """, *params)
+
+    history = [{"date": row["date"].isoformat(), "km": float(row["km"])} for row in rows]
+
+    current_km = history[-1]["km"] if history else 0
+    last_updated = history[-1]["date"] if history else None
+
+    # Prediction: linear extrapolation from last 90 days
+    daily_avg_km = 0.0
+    year_end_km = current_km
+    if len(history) >= 2:
+        recent = [h for h in history if h["date"] >= (date.today() - timedelta(days=90)).isoformat()]
+        if len(recent) >= 2:
+            km_diff = recent[-1]["km"] - recent[0]["km"]
+            days_diff = (date.fromisoformat(recent[-1]["date"]) - date.fromisoformat(recent[0]["date"])).days
+            if days_diff > 0:
+                daily_avg_km = round(km_diff / days_diff, 1)
+                days_to_year_end = (date(date.today().year, 12, 31) - date.today()).days
+                year_end_km = round(current_km + daily_avg_km * days_to_year_end, 0)
+
+    return {
+        "current_km": current_km,
+        "last_updated": last_updated,
+        "history": history,
+        "prediction": {
+            "year_end_km": year_end_km,
+            "daily_avg_km": daily_avg_km,
+        },
+    }

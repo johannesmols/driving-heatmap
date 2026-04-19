@@ -12,11 +12,15 @@
     collapsed = $bindable(false),
     selectedTrip = $bindable<TripDetail | null>(null),
     vehicleId = null,
+    dateFrom = '',
+    dateTo = '',
     onTripSelect,
   }: {
     collapsed: boolean;
     selectedTrip: TripDetail | null;
     vehicleId?: string | null;
+    dateFrom?: string;
+    dateTo?: string;
     onTripSelect: (trip: Trip) => void;
   } = $props();
 
@@ -28,8 +32,6 @@
   let searchQuery = $state('');
   let searchInput = $state('');
   let sortBy = $state<'date_desc' | 'date_asc' | 'distance_desc' | 'duration_desc'>('date_desc');
-  let dateFrom = $state('');
-  let dateTo = $state('');
   let searchTimer: ReturnType<typeof setTimeout>;
 
   const LIMIT = 50;
@@ -132,20 +134,6 @@
             value={searchInput}
             oninput={handleSearchInput}
             class="h-8 text-sm pl-7"
-          />
-        </div>
-        <!-- Date range -->
-        <div class="flex items-center gap-1.5">
-          <input
-            type="date"
-            bind:value={dateFrom}
-            class="flex-1 text-xs bg-secondary text-secondary-foreground rounded px-2 py-1 border border-border"
-          />
-          <span class="text-xs text-muted-foreground">→</span>
-          <input
-            type="date"
-            bind:value={dateTo}
-            class="flex-1 text-xs bg-secondary text-secondary-foreground rounded px-2 py-1 border border-border"
           />
         </div>
       </div>

@@ -40,5 +40,8 @@ desktop.ini
 # ─── Docker local state ───────────────────────────────────
 *.pid
 
+# ─── Backups ──────────────────────────────────────────────
+backups/
+
 # ─── Plan artefacts (personal) ────────────────────────────
 .claude/

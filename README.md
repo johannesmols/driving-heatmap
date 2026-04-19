@@ -1,77 +1,113 @@
 # driving-heatmap
 
-Personal driving heatmap: pulls GPS trips from the Connected Cars GraphQL API,
-stores them in PostgreSQL + PostGIS, and renders a Strava-style heatmap.
+A personal driving heatmap that syncs GPS trip data from the [Connected Cars](https://connectedcars.io/) GraphQL API, stores it in PostgreSQL + PostGIS, and renders a Strava-style heatmap with additive brightness on dark maps and multiply blending on light maps.
 
-Full design lives in [plan.md](plan.md).
+## Features
 
-## Repo layout
+- **Strava-style heatmap** — overlapping routes glow brighter (dark mode) or darken (light mode)
+- **Multiple basemaps** — Dark, Light, and Satellite with per-map blending modes
+- **Trip browsing** — searchable, sortable trip list with infinite scroll
+- **Trip detail** — tabbed view with overview stats, driving events, and speed profile chart
+- **Insights dashboard** — aggregate statistics (driving time, distance, trips) with bar charts, odometer history, and parked-vs-driving breakdown
+- **Global date filtering** — filter both the heatmap and trip list by date range
+- **Map hover tooltips** — hover over any route to see trip details
+- **Time animation** — slider to animate routes appearing chronologically
+- **Automatic sync** — background service pulls new trips every 6 hours
+- **Vehicle selector** — multi-vehicle support with per-vehicle filtering
+
+## Architecture
 
 ```
-driving-heatmap/
-├── compose.yaml            # full stack (db + sync; api/frontend added later)
-├── .env.example            # copy to .env and fill in
-├── db/init/                # SQL auto-run on first PostGIS container start
-├── sync/                   # Python trip-sync service (Phase 1)
-├── api/                    # FastAPI server (Phase 2)
-└── frontend/               # Svelte 5 SPA   (Phase 3 — placeholder)
+┌────────────┐     ┌──────────┐     ┌──────────┐     ┌──────────────┐
+│ Connected  │────>│  Sync    │────>│ PostGIS  │<────│   FastAPI    │
+│ Cars API   │     │ (Python) │     │   DB     │     │     API      │
+└────────────┘     └──────────┘     └──────────┘     └──────┬───────┘
+                                                            │
+                                                     ┌──────┴───────┐
+                                                     │    Svelte    │
+                                                     │  (nginx)     │
+                                                     └──────────────┘
 ```
 
-## Local dev quickstart
+Four Docker containers: **PostGIS** database, **Python sync** service (APScheduler), **FastAPI** REST API, and **Svelte 5 SPA** served by nginx.
 
-Prerequisites: Docker Desktop (or Docker Engine + Compose v2).
+## Quick start
+
+Prerequisites: [Docker](https://docs.docker.com/get-docker/) with Compose v2.
 
 ```bash
+git clone https://github.com/johannesmols/driving-heatmap.git
+cd driving-heatmap
 cp .env.example .env
-# edit .env: set DB_PASSWORD, CC_EMAIL, CC_PASSWORD
-
-docker compose up -d db
-docker compose logs -f db          # wait for "ready to accept connections"
-
-docker compose up -d --build sync
-docker compose logs -f sync        # watch the initial backfill
-
-docker compose up -d --build api
-open http://localhost:8000/docs    # Swagger UI
+# Edit .env — set DB_PASSWORD, CC_EMAIL, CC_PASSWORD, PGADMIN_PASSWORD
+docker compose up -d --build
 ```
 
-Inspect the database via psql:
+Open <http://localhost:3000>. The sync service will start pulling trips immediately — watch progress with `docker compose logs -f sync`.
+
+### Development
+
+The `compose.override.yaml` automatically adds dev conveniences (exposed ports, pgAdmin):
+
+| Service | Dev URL |
+|---------|---------|
+| Frontend | <http://localhost:3000> |
+| API (Swagger) | <http://localhost:8000/docs> |
+| PostgreSQL | `localhost:5432` |
+| pgAdmin | <http://localhost:5050> |
+
+For frontend hot-reload during development:
 
 ```bash
-docker compose exec db psql -U heatmap -d heatmap -c "\dt"
-docker compose exec db psql -U heatmap -d heatmap -c "SELECT COUNT(*) FROM trips;"
+cd frontend
+bun install
+bun run dev    # Vite dev server at http://localhost:5173
 ```
 
-Or open pgAdmin at <http://localhost:5050>. Log in with `PGADMIN_EMAIL` /
-`PGADMIN_PASSWORD` from `.env`. The `driving-heatmap` server is pre-registered
-via [db/pgadmin/servers.json](db/pgadmin/servers.json); enter the PostgreSQL
-password (`DB_PASSWORD`) the first time you connect.
+### Production (TrueNAS / server)
 
-## Phase status
+Rename or delete `compose.override.yaml` to use the production-baseline `compose.yaml` (no exposed db/api ports, no pgAdmin):
 
-- [x] Phase 0 — plan
-- [x] Phase 1 — sync service + database
-- [x] Phase 2 — API server
-- [ ] Phase 3 — heatmap frontend
-- [ ] Phase 4 — Docker Compose hardening + TrueNAS deployment
+```bash
+mv compose.override.yaml compose.override.yaml.bak
+docker compose up -d --build
+```
 
-### Phase 1 backfill results
+## Configuration
 
-First full sync against the live Connected Cars API (vehicle: Volkswagen up! id=34881):
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DB_PASSWORD` | Yes | — | PostgreSQL password (internal to Docker network) |
+| `CC_EMAIL` | Yes | — | Connected Cars account email |
+| `CC_PASSWORD` | Yes | — | Connected Cars account password |
+| `CC_NAMESPACE` | No | `semler:minvolkswagen` | App namespace (Min Volkswagen DK). Other examples: `semler:minskoda` |
+| `SYNC_INTERVAL_HOURS` | No | `6` | Hours between sync runs |
+| `FRONTEND_PORT` | No | `3000` | Host port for the web UI |
+| `PGADMIN_EMAIL` | No | `admin@local.dev` | pgAdmin login email (dev only) |
+| `PGADMIN_PASSWORD` | Yes* | — | pgAdmin login password (*only needed with dev override) |
 
-- 4,535 trips, 695,841 positions
-- Date range: 2022-01-24 → 2026-04-10
-- Initial backfill: 470.8s; incremental re-run: ~1.5s (short-circuits on last-synced timestamp)
+## API endpoints
 
-### Phase 2 endpoints
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/health` | Health check (DB connectivity) |
+| `GET /api/stats` | Trip counts, totals, date range. Supports `vehicle_id`, `from`, `to` |
+| `GET /api/vehicles` | List vehicles with trip counts |
+| `GET /api/trips` | Paginated trip list with search, sort, date range |
+| `GET /api/trips/{id}` | Single trip with full route GeoJSON and GPS positions |
+| `GET /api/tracks` | GeoJSON FeatureCollection for the heatmap. Supports bbox, simplify, date range |
+| `GET /api/insights` | Aggregate statistics by period (30d, month, year) |
+| `GET /api/odometer` | Odometer history with year-end prediction |
 
-FastAPI service at <http://localhost:8000>. Swagger UI at <http://localhost:8000/docs>.
+## Connected Cars compatibility
 
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/stats` | counts, total km / fuel, date range |
-| `GET /api/trips?from=&to=&limit=&offset=` | paginated trip list, newest first |
-| `GET /api/trips/{id}` | single trip with route GeoJSON + chronological positions |
-| `GET /api/tracks?from=&to=&bbox=&simplify=` | GeoJSON `FeatureCollection` for the heatmap |
+This project works with any car connected via the [Connected Cars](https://connectedcars.io/) platform. Known compatible apps:
 
-Observed on the Phase 1 dataset: `/api/tracks` returns 4,479 `LineString` features (full detail); `bbox=8,54,13,58` trims to 4,331; `simplify=0.001` reduces a sample route from 37 → 2 coordinates.
+- **Min Volkswagen** (Denmark) — namespace: `semler:minvolkswagen`
+- **MySkoda** — namespace: `semler:minskoda`
+
+Set the `CC_NAMESPACE` environment variable to match your app. See [docs/connected-cars-api.md](docs/connected-cars-api.md) for detailed API documentation.
+
+## License
+
+[MIT](LICENSE)

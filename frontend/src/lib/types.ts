@@ -69,6 +69,42 @@ export type BasemapPreset = {
   name: string;
   style: string | object;
   dark: boolean;
+  blendMode: 'additive' | 'multiply';
+};
+
+export type InsightsResponse = {
+  period: { type: string; year: number; month?: number | null };
+  summary: {
+    total_driving_time_min: number;
+    total_distance_km: number;
+    longest_trip_km: number;
+    trip_count: number;
+    total_fuel_l: number;
+    total_idle_time_s: number;
+  };
+  parked_vs_driving: {
+    driving_pct: number;
+    parked_pct: number;
+    total_period_hours: number;
+  };
+  buckets: InsightsBucket[];
+};
+
+export type InsightsBucket = {
+  label: string;
+  distance_km: number;
+  driving_time_min: number;
+  trip_count: number;
+};
+
+export type OdometerResponse = {
+  current_km: number;
+  last_updated: string | null;
+  history: { date: string; km: number }[];
+  prediction: {
+    year_end_km: number;
+    daily_avg_km: number;
+  };
 };
 
 export const COLOR_PRESETS: ColorPreset[] = [
@@ -109,15 +145,18 @@ export const BASEMAP_PRESETS: BasemapPreset[] = [
     name: 'Dark',
     style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
     dark: true,
+    blendMode: 'additive',
   },
   {
     name: 'Light',
     style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
     dark: false,
+    blendMode: 'multiply',
   },
   {
     name: 'Satellite',
     style: ESRI_SATELLITE_STYLE,
     dark: true,
+    blendMode: 'additive',
   },
 ];
