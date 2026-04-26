@@ -17,7 +17,9 @@ services:
       POSTGRES_USER: heatmap
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      # Postgres 18+ stores data under a major-version subdir
+      # (e.g. /var/lib/postgresql/18/docker), so mount the parent dir.
+      - ./data/postgres:/var/lib/postgresql
       - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U heatmap -d heatmap"]
