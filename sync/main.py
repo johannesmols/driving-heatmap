@@ -1,5 +1,6 @@
 import os
 import logging
+from calendar import monthrange
 from datetime import datetime, timezone
 import httpx
 import psycopg
@@ -78,30 +79,54 @@ query {
 }
 """
 
-GET_TRIPS_QUERY = """
-query GetTrips($before: Cursor) {
-  viewer {
-    vehicles {
-      vehicle {
-        trips(last: 50, before: $before) {
-          items {
-            id startTime endTime duration
-            mileage gpsMileage
-            startLatitude startLongitude endLatitude endLongitude
-            startAddressString endAddressString
-            startOdometer endOdometer
-            fuelUsed electricityUsed idleTime
-            accelerationHigh accelerationMedium accelerationLow
-            brakeHigh brakeMedium brakeLow
-            turnHigh turnMedium
-            positions { latitude longitude time speed direction eph }
-          }
-          pageInfo { hasPreviousPage startCursor }
-        }
-      }
-    }
+TRIP_FIELDS = """
+  id startTime endTime duration
+  mileage gpsMileage
+  startLatitude startLongitude endLatitude endLongitude
+  startAddressString endAddressString
+  startOdometer endOdometer
+  fuelUsed electricityUsed idleTime
+  accelerationHigh accelerationMedium accelerationLow
+  brakeHigh brakeMedium brakeLow
+  turnHigh turnMedium
+  positions { latitude longitude time speed direction eph }
+"""
+
+GET_TRIPS_QUERY = f"""
+query GetTrips($before: Cursor) {{
+  viewer {{
+    vehicles {{
+      vehicle {{
+        trips(last: 50, before: $before) {{
+          items {{ {TRIP_FIELDS} }}
+          pageInfo {{ hasPreviousPage startCursor }}
+        }}
+      }}
+    }}
+  }}
+}}
+"""
+
+# Date-range query used by the deep-scan job. `first` and `last` are Date scalars
+# (ISO strings), not Int paginators — see docs/connected-cars-api.md.
+GET_MONTH_FEED_QUERY = """
+query MonthFeed($vehicleId: String!, $first: Date!, $last: Date!) {
+  vehicleActivityFeed(
+    vehicleId: $vehicleId
+    types: [TRIP]
+    first: $first
+    last: $last
+    limit: 1000
+  ) {
+    ... on VehicleTrip { id startTime }
   }
 }
+"""
+
+GET_SINGLE_TRIP_QUERY = f"""
+query GetSingleTrip($id: ID!) {{
+  vehicleTrip(id: $id) {{ {TRIP_FIELDS} }}
+}}
 """
 
 
@@ -142,6 +167,76 @@ def get_last_synced(conn, vehicle_id: str) -> datetime | None:
         return row[0]  # None if no trips yet
 
 
+def _parse_trip_start(trip: dict) -> datetime:
+    return datetime.fromisoformat(trip["startTime"].replace("Z", "+00:00"))
+
+
+def _insert_trip(cur, vehicle_id: str, trip: dict) -> int:
+    """Insert one trip (and its positions). Returns number of positions written.
+    Idempotent via ON CONFLICT DO NOTHING.
+    """
+    positions = trip.get("positions") or []
+    linestring = build_linestring(positions)
+
+    cur.execute("""
+        INSERT INTO trips (
+            id, vehicle_id, started_at, ended_at, duration_min,
+            mileage_km, gps_mileage_km,
+            start_address, end_address,
+            start_odometer_km, end_odometer_km,
+            fuel_used_l, electricity_used_kwh, idle_time_s,
+            accel_high, accel_medium, accel_low,
+            brake_high, brake_medium, brake_low,
+            turn_high, turn_medium,
+            start_point, end_point, route,
+            raw_data
+        ) VALUES (
+            %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s,
+            ST_SetSRID(ST_MakePoint(%s, %s), 4326),
+            ST_SetSRID(ST_MakePoint(%s, %s), 4326),
+            ST_GeomFromText(%s, 4326),
+            %s
+        )
+        ON CONFLICT (id) DO NOTHING
+    """, (
+        trip["id"], vehicle_id,
+        trip["startTime"], trip.get("endTime"), trip.get("duration"),
+        trip.get("mileage"), trip.get("gpsMileage"),
+        trip.get("startAddressString"), trip.get("endAddressString"),
+        trip.get("startOdometer"), trip.get("endOdometer"),
+        trip.get("fuelUsed"), trip.get("electricityUsed"), trip.get("idleTime"),
+        trip.get("accelerationHigh"), trip.get("accelerationMedium"),
+        trip.get("accelerationLow"),
+        trip.get("brakeHigh"), trip.get("brakeMedium"), trip.get("brakeLow"),
+        trip.get("turnHigh"), trip.get("turnMedium"),
+        trip.get("startLongitude"), trip.get("startLatitude"),
+        trip.get("endLongitude"),  trip.get("endLatitude"),
+        linestring,
+        Jsonb(trip),
+    ))
+
+    if positions:
+        cur.executemany("""
+            INSERT INTO positions
+                (trip_id, recorded_at, point, speed_kmh, direction_deg, accuracy_m)
+            VALUES (
+                %s, %s,
+                ST_SetSRID(ST_MakePoint(%s, %s), 4326),
+                %s, %s, %s
+            )
+            ON CONFLICT (trip_id, recorded_at) DO NOTHING
+        """, [
+            (trip["id"], p["time"],
+             p["longitude"], p["latitude"],
+             p.get("speed"), p.get("direction"), p.get("eph"))
+            for p in positions
+        ])
+    return len(positions)
+
+
 def sync_vehicle(conn, token: str, namespace: str, vehicle: dict):
     upsert_vehicle(conn, vehicle, namespace)
     last_synced = get_last_synced(conn, vehicle["id"])
@@ -171,80 +266,31 @@ def sync_vehicle(conn, token: str, namespace: str, vehicle: dict):
         if not items:
             break
 
+        # API returns items oldest-first within a page. We must process the whole
+        # page (filtering already-synced trips) rather than exit on the first
+        # already-synced one — otherwise newer trips at the end of the page get
+        # skipped.
+        page_oldest = min(_parse_trip_start(t) for t in items)
+
         with conn.cursor() as cur:
             for trip in items:
-                trip_start = datetime.fromisoformat(trip["startTime"].replace("Z", "+00:00"))
-
-                # On incremental runs, stop when we reach trips already in the database
+                trip_start = _parse_trip_start(trip)
                 if last_synced and trip_start <= last_synced:
-                    log.info(f"Reached already-synced trip at {trip_start}, stopping.")
-                    conn.commit()
-                    return
-
-                positions = trip.get("positions") or []
-                linestring = build_linestring(positions)
-
-                cur.execute("""
-                    INSERT INTO trips (
-                        id, vehicle_id, started_at, ended_at, duration_min,
-                        mileage_km, gps_mileage_km,
-                        start_address, end_address,
-                        start_odometer_km, end_odometer_km,
-                        fuel_used_l, electricity_used_kwh, idle_time_s,
-                        accel_high, accel_medium, accel_low,
-                        brake_high, brake_medium, brake_low,
-                        turn_high, turn_medium,
-                        start_point, end_point, route,
-                        raw_data
-                    ) VALUES (
-                        %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s,
-                        ST_SetSRID(ST_MakePoint(%s, %s), 4326),
-                        ST_SetSRID(ST_MakePoint(%s, %s), 4326),
-                        ST_GeomFromText(%s, 4326),
-                        %s
-                    )
-                    ON CONFLICT (id) DO NOTHING
-                """, (
-                    trip["id"], vehicle["id"],
-                    trip["startTime"], trip.get("endTime"), trip.get("duration"),
-                    trip.get("mileage"), trip.get("gpsMileage"),
-                    trip.get("startAddressString"), trip.get("endAddressString"),
-                    trip.get("startOdometer"), trip.get("endOdometer"),
-                    trip.get("fuelUsed"), trip.get("electricityUsed"), trip.get("idleTime"),
-                    trip.get("accelerationHigh"), trip.get("accelerationMedium"),
-                    trip.get("accelerationLow"),
-                    trip.get("brakeHigh"), trip.get("brakeMedium"), trip.get("brakeLow"),
-                    trip.get("turnHigh"), trip.get("turnMedium"),
-                    trip.get("startLongitude"), trip.get("startLatitude"),
-                    trip.get("endLongitude"),  trip.get("endLatitude"),
-                    linestring,
-                    Jsonb(trip),
-                ))
+                    continue
+                positions_written += _insert_trip(cur, vehicle["id"], trip)
                 trips_written += 1
 
-                if positions:
-                    cur.executemany("""
-                        INSERT INTO positions
-                            (trip_id, recorded_at, point, speed_kmh, direction_deg, accuracy_m)
-                        VALUES (
-                            %s, %s,
-                            ST_SetSRID(ST_MakePoint(%s, %s), 4326),
-                            %s, %s, %s
-                        )
-                        ON CONFLICT (trip_id, recorded_at) DO NOTHING
-                    """, [
-                        (trip["id"], p["time"],
-                         p["longitude"], p["latitude"],
-                         p.get("speed"), p.get("direction"), p.get("eph"))
-                        for p in positions
-                    ])
-                    positions_written += len(positions)
-
         conn.commit()
-        log.info(f"  {trips_written} trips, {positions_written} positions synced so far.")
+        log.info(
+            f"  page processed (oldest in page: {page_oldest}); "
+            f"running totals — {trips_written} trips, {positions_written} positions."
+        )
+
+        # Stop once the page boundary has crossed last_synced — every older
+        # trip is already in the database.
+        if last_synced and page_oldest <= last_synced:
+            log.info(f"Reached already-synced range (page oldest = {page_oldest}); done.")
+            return
 
         # Paging backwards through history: hasPreviousPage tells us if older
         # trips exist; startCursor points at the oldest trip in the current
@@ -255,6 +301,145 @@ def sync_vehicle(conn, token: str, namespace: str, vehicle: dict):
 
     log.info(f"Vehicle sync done: {trips_written} trips, {positions_written} positions.")
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deep-scan: detect and fill historical gaps via vehicleActivityFeed
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _iter_months(start: datetime, end: datetime):
+    """Yield (month_start_utc, month_end_utc) for each calendar month in [start, end]."""
+    start_utc = start.astimezone(timezone.utc) if start.tzinfo else start.replace(tzinfo=timezone.utc)
+    end_utc   = end.astimezone(timezone.utc)   if end.tzinfo   else end.replace(tzinfo=timezone.utc)
+    cur = start_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    while cur <= end_utc:
+        last_day = monthrange(cur.year, cur.month)[1]
+        month_end = cur.replace(day=last_day, hour=23, minute=59, second=59)
+        yield cur, month_end
+        cur = cur.replace(year=cur.year + 1, month=1) if cur.month == 12 \
+              else cur.replace(month=cur.month + 1)
+
+
+def _to_api_date(dt: datetime) -> str:
+    """Format datetime as the API's Date scalar: 2023-01-01T00:00:00.000Z."""
+    dt = dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def deep_scan_vehicle(conn, token: str, namespace: str, vehicle: dict):
+    """Walk calendar months and fill any trip gaps in the local database.
+
+    Catches trips the incremental sync missed (API hiccups, partial backfills,
+    or trips that fell outside a page boundary on previous runs).
+    """
+    vehicle_id = vehicle["id"]
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT MIN(started_at) FROM trips WHERE vehicle_id = %s",
+            (vehicle_id,),
+        )
+        min_start = cur.fetchone()[0]
+
+    if min_start is None:
+        log.info(f"Deep-scan: no trips in DB for vehicle {vehicle_id}, skipping.")
+        return
+
+    end_date = datetime.now(timezone.utc)
+    log.info(
+        f"Deep-scanning {vehicle['make']} {vehicle['model']} (id={vehicle_id}) "
+        f"from {min_start.date()} to {end_date.date()}"
+    )
+
+    months_scanned = 0
+    gaps_filled = 0
+
+    for month_start, month_end in _iter_months(min_start, end_date):
+        data = graphql_with_retry(
+            token, namespace, GET_MONTH_FEED_QUERY,
+            {
+                "vehicleId": vehicle_id,
+                "first": _to_api_date(month_start),
+                "last":  _to_api_date(month_end),
+            },
+        )
+        feed = data.get("vehicleActivityFeed") or []
+        api_ids = [item["id"] for item in feed if item.get("id")]
+        months_scanned += 1
+
+        if not api_ids:
+            continue
+
+        if len(api_ids) >= 1000:
+            log.warning(
+                f"Deep-scan: month {month_start.strftime('%Y-%m')} returned "
+                f"{len(api_ids)} items — at limit, results may be truncated."
+            )
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM trips WHERE vehicle_id = %s AND id = ANY(%s)",
+                (vehicle_id, api_ids),
+            )
+            existing = {row[0] for row in cur.fetchall()}
+        missing = [tid for tid in api_ids if tid not in existing]
+
+        if not missing:
+            continue
+
+        log.info(
+            f"Deep-scan: month {month_start.strftime('%Y-%m')} "
+            f"has {len(missing)} missing trip(s); fetching."
+        )
+        with conn.cursor() as cur:
+            for trip_id in missing:
+                trip_data = graphql_with_retry(
+                    token, namespace, GET_SINGLE_TRIP_QUERY, {"id": trip_id},
+                )
+                trip = trip_data.get("vehicleTrip")
+                if not trip:
+                    log.warning(f"Deep-scan: vehicleTrip({trip_id}) returned null.")
+                    continue
+                _insert_trip(cur, vehicle_id, trip)
+                gaps_filled += 1
+        conn.commit()
+
+    log.info(
+        f"Deep-scan complete for vehicle {vehicle_id}: "
+        f"{gaps_filled} gaps filled across {months_scanned} months."
+    )
+
+
+def run_deep_scan():
+    """Single deep-scan run. Detects and fills gaps via vehicleActivityFeed."""
+    log.info("─── Deep-scan starting ───")
+    started_at = datetime.now(timezone.utc)
+
+    email     = os.environ["CC_EMAIL"]
+    password  = os.environ["CC_PASSWORD"]
+    namespace = os.environ.get("CC_NAMESPACE", "semler:minvolkswagen")
+    db_url    = os.environ["DATABASE_URL"]
+
+    try:
+        token = authenticate(email, password, namespace)
+        log.info("Authenticated.")
+
+        data     = graphql(token, namespace, GET_VEHICLES_QUERY)
+        vehicles = [v["vehicle"] for v in data["viewer"]["vehicles"]]
+        log.info(f"Found {len(vehicles)} vehicle(s).")
+
+        with psycopg.connect(db_url) as conn:
+            for vehicle in vehicles:
+                deep_scan_vehicle(conn, token, namespace, vehicle)
+
+        elapsed = (datetime.now(timezone.utc) - started_at).total_seconds()
+        log.info(f"─── Deep-scan complete in {elapsed:.1f}s ───")
+
+    except Exception:
+        log.exception("Deep-scan failed.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sync orchestration
+# ─────────────────────────────────────────────────────────────────────────────
 
 def run_sync():
     """Single sync run. Called on startup and by APScheduler every N hours."""
@@ -295,7 +480,8 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    interval_hours = int(os.environ.get("SYNC_INTERVAL_HOURS", "6"))
+    interval_hours           = int(os.environ.get("SYNC_INTERVAL_HOURS", "6"))
+    deep_scan_interval_hours = int(os.environ.get("DEEP_SCAN_INTERVAL_HOURS", "168"))  # weekly
 
     # Run immediately on startup (catches up any missed data or does first backfill)
     run_sync()
@@ -309,5 +495,14 @@ if __name__ == "__main__":
         id="cc_sync",
         max_instances=1,
     )
-    log.info(f"Scheduler started — will sync every {interval_hours} hours.")
+    scheduler.add_job(
+        run_deep_scan, "interval",
+        hours=deep_scan_interval_hours,
+        id="cc_deep_scan",
+        max_instances=1,
+    )
+    log.info(
+        f"Scheduler started — sync every {interval_hours}h, "
+        f"deep-scan every {deep_scan_interval_hours}h."
+    )
     scheduler.start()

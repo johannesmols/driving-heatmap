@@ -80,6 +80,12 @@ and uses `items` (not the Relay-standard `edges`/`node`).
   and pass it as `before: $cursor` in the next request, still using `last: N`.
 - `hasNextPage` refers to whether there are more pages in the direction you are
   paginating. When paginating backwards with `last:`, this means "are there older trips?"
+- **Items within a page are returned in chronological order (oldest first, newest last).**
+  This matters for incremental sync logic: do not exit on the first item where
+  `startTime <= last_synced` — the page contains older trips at the start *and* newer
+  trips at the end, so an early exit will skip the new ones. Iterate the whole page,
+  filter by `startTime > last_synced`, and only stop paging once the *oldest item in
+  the page* crosses the synced boundary.
 
 ### Full query for incremental sync
 
@@ -214,6 +220,7 @@ owner this is granted automatically.
 |---|---|
 | `trips(first: N)` without cursor | Starts from ~2018, returns empty items. Always use `last:` |
 | Paging backwards | `trips(last: 50, before: $endCursor)` — never use `after:` going backwards |
+| Item order within a page | Oldest first, newest last — filter, don't exit-on-first-old-item |
 | `vehicleActivityFeed` `first`/`last` | These are Date scalars (ISO strings), not integers |
 | `Vehicle.trip(id:)` | Does not exist. Use root-level `vehicleTrip(id:)` |
 | `vehicles` response shape | Items are `{ vehicle: { ... } }`, not flat objects |

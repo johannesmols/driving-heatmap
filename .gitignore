@@ -40,6 +40,9 @@ desktop.ini
 # ─── Docker local state ───────────────────────────────────
 *.pid
 
+# ─── Runtime data (DB files, etc.) ────────────────────────
+data/
+
 # ─── Backups ──────────────────────────────────────────────
 backups/
 

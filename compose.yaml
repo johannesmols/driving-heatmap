@@ -17,7 +17,7 @@ services:
       POSTGRES_USER: heatmap
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U heatmap -d heatmap"]
@@ -115,7 +115,6 @@ services:
     <<: *logging
 
 volumes:
-  db_data:
   pgadmin_data:
 
 networks:
