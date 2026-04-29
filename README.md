@@ -73,6 +73,30 @@ mv compose.override.yaml compose.override.yaml.bak
 docker compose up -d --build
 ```
 
+#### Updating the deployment
+
+`compose.yaml` bind-mounts `sync/main.py` and `api/main.py` into their containers, so source changes to those files are picked up on container restart — no image rebuild needed:
+
+```bash
+git pull
+# then click Restart on the app in the TrueNAS UI
+```
+
+A rebuild **is** required for changes to:
+
+- `requirements.txt` or either Python `Dockerfile` (Python deps are baked into the image)
+- anything under `frontend/` (the SPA is built at image-build time and served as static files by nginx)
+- `db/init/` (schema is only run on a fresh database volume)
+
+For those, run once on the host:
+
+```bash
+docker compose build --no-cache <service>
+docker compose up -d <service>
+```
+
+The TrueNAS UI Restart action does **not** rebuild images — it only restarts containers using whatever image is already cached.
+
 ## Configuration
 
 | Variable | Required | Default | Description |

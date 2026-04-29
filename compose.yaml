@@ -38,6 +38,11 @@ services:
   sync:
     container_name: driving-heatmap-sync
     build: ./sync
+    # Live-mount source so `git pull` + container restart picks up code changes
+    # without an image rebuild. Image still has its own COPY of main.py for
+    # standalone runs; the bind-mount overlays it at runtime.
+    volumes:
+      - ./sync/main.py:/app/main.py:ro
     environment:
       DATABASE_URL: postgresql://heatmap:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/heatmap
       CC_EMAIL: ${CC_EMAIL:?CC_EMAIL must be set in .env}
@@ -59,6 +64,8 @@ services:
   api:
     container_name: driving-heatmap-api
     build: ./api
+    volumes:
+      - ./api/main.py:/app/main.py:ro
     environment:
       DATABASE_URL: postgresql://heatmap:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/heatmap
     depends_on:
