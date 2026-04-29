@@ -100,9 +100,17 @@ export type OdometerResponse = {
   current_km: number;
   last_updated: string | null;
   history: { date: string; km: number }[];
+  projection: { date: string; km: number }[];
   prediction: {
     year_end_km: number;
     daily_avg_km: number;
+  };
+  period: {
+    type: '30d' | 'month' | 'year';
+    year: number;
+    month: number | null;
+    from: string;
+    to: string;
   };
 };
 

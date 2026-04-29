@@ -1,10 +1,10 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import type { InsightsResponse, OdometerResponse } from './types.js';
-  import { Separator } from '$lib/components/ui/separator/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import BarChart from './BarChart.svelte';
   import OdometerChart from './OdometerChart.svelte';
+  import ParkedRing from './ParkedRing.svelte';
   import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
   import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
   import ClockIcon from '@lucide/svelte/icons/clock';
@@ -12,6 +12,7 @@
   import TrophyIcon from '@lucide/svelte/icons/trophy';
   import HashIcon from '@lucide/svelte/icons/hash';
   import GaugeIcon from '@lucide/svelte/icons/gauge';
+  import ParkingSquareIcon from '@lucide/svelte/icons/parking-square';
 
   let { vehicleId = null }: { vehicleId?: string | null } = $props();
 
@@ -29,23 +30,24 @@
     void year;
     void month;
     void vehicleId;
-    untrack(() => fetchInsights());
+    untrack(() => {
+      fetchInsights();
+      fetchOdometer();
+    });
   });
 
-  // Fetch odometer once when vehicle changes
-  $effect(() => {
-    void vehicleId;
-    untrack(() => fetchOdometer());
-  });
+  function periodParams(): URLSearchParams {
+    const params = new URLSearchParams({ period });
+    if (vehicleId) params.set('vehicle_id', vehicleId);
+    if (period !== '30d') params.set('year', String(year));
+    if (period === 'month') params.set('month', String(month));
+    return params;
+  }
 
   async function fetchInsights() {
     loading = true;
     try {
-      const params = new URLSearchParams({ period });
-      if (vehicleId) params.set('vehicle_id', vehicleId);
-      if (period !== '30d') params.set('year', String(year));
-      if (period === 'month') params.set('month', String(month));
-      const res = await fetch(`/api/insights?${params}`);
+      const res = await fetch(`/api/insights?${periodParams()}`);
       if (res.ok) insights = await res.json();
     } finally {
       loading = false;
@@ -53,9 +55,7 @@
   }
 
   async function fetchOdometer() {
-    const params = new URLSearchParams();
-    if (vehicleId) params.set('vehicle_id', vehicleId);
-    const res = await fetch(`/api/odometer?${params}`);
+    const res = await fetch(`/api/odometer?${periodParams()}`);
     if (res.ok) odometer = await res.json();
   }
 
@@ -102,7 +102,7 @@
 </script>
 
 <div class="h-full overflow-y-auto bg-card border-t border-border">
-  <div class="max-w-5xl mx-auto px-4 py-3 space-y-4">
+  <div class="px-4 py-3 space-y-4">
     <!-- Header: period selector + navigation -->
     <div class="flex items-center justify-between">
       <div class="flex rounded-md border border-border overflow-hidden">
@@ -135,8 +135,8 @@
     </div>
 
     {#if insights && !loading}
-      <!-- Summary cards -->
-      <div class="grid grid-cols-4 gap-3">
+      <!-- Summary row: 4 stat cards + parked-vs-driving ring -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div class="bg-secondary/50 rounded-lg p-3">
           <div class="flex items-center gap-1.5 text-muted-foreground mb-1">
             <ClockIcon class="size-3.5" />
@@ -165,99 +165,80 @@
           </div>
           <div class="text-lg font-semibold">{insights.summary.trip_count.toLocaleString()}</div>
         </div>
+        <div class="bg-secondary/50 rounded-lg p-3">
+          <div class="flex items-center gap-1.5 text-muted-foreground mb-1">
+            <ParkingSquareIcon class="size-3.5" />
+            <span class="text-xs">Parked vs. driving</span>
+          </div>
+          <ParkedRing
+            drivingPct={insights.parked_vs_driving.driving_pct}
+            parkedPct={insights.parked_vs_driving.parked_pct}
+          />
+        </div>
       </div>
 
-      <!-- Chart section -->
-      <div class="flex gap-6">
+      <!-- Charts row: bar chart + odometer side by side on wide screens, stacked on narrow -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Bar chart -->
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center justify-between mb-2">
+        <div>
+          <div class="flex items-center justify-between mb-2 gap-2 flex-wrap">
             <span class="text-sm font-medium">
               {chartMode === 'distance' ? 'Distance' : 'Driving time'}
             </span>
-            <div class="flex rounded-md border border-border overflow-hidden">
-              <button
-                class="px-2 py-0.5 text-xs cursor-pointer transition-colors"
-                class:bg-primary={chartMode === 'distance'}
-                class:text-primary-foreground={chartMode === 'distance'}
-                class:bg-secondary={chartMode !== 'distance'}
-                class:text-secondary-foreground={chartMode !== 'distance'}
-                onclick={() => (chartMode = 'distance')}
-              >km</button>
-              <button
-                class="px-2 py-0.5 text-xs cursor-pointer transition-colors"
-                class:bg-primary={chartMode === 'time'}
-                class:text-primary-foreground={chartMode === 'time'}
-                class:bg-secondary={chartMode !== 'time'}
-                class:text-secondary-foreground={chartMode !== 'time'}
-                onclick={() => (chartMode = 'time')}
-              >time</button>
+            <div class="flex items-center gap-3">
+              <span class="text-xs text-muted-foreground">
+                Avg
+                <span class="text-foreground font-medium">
+                  {chartMode === 'distance'
+                    ? `${chartBuckets.length > 0 ? Math.round(chartAvg).toLocaleString() : 0} km`
+                    : formatDuration(chartBuckets.length > 0 ? Math.round(chartAvg) : 0)}
+                </span>
+              </span>
+              <div class="flex rounded-md border border-border overflow-hidden">
+                <button
+                  class="px-2 py-0.5 text-xs cursor-pointer transition-colors"
+                  class:bg-primary={chartMode === 'distance'}
+                  class:text-primary-foreground={chartMode === 'distance'}
+                  class:bg-secondary={chartMode !== 'distance'}
+                  class:text-secondary-foreground={chartMode !== 'distance'}
+                  onclick={() => (chartMode = 'distance')}
+                >km</button>
+                <button
+                  class="px-2 py-0.5 text-xs cursor-pointer transition-colors"
+                  class:bg-primary={chartMode === 'time'}
+                  class:text-primary-foreground={chartMode === 'time'}
+                  class:bg-secondary={chartMode !== 'time'}
+                  class:text-secondary-foreground={chartMode !== 'time'}
+                  onclick={() => (chartMode = 'time')}
+                >time</button>
+              </div>
             </div>
           </div>
           <BarChart buckets={chartBuckets} unit={chartUnit} avgValue={chartAvg} />
-          <div class="flex gap-3 mt-2">
-            <div class="flex-1 bg-secondary/50 rounded px-3 py-2">
-              <div class="text-xs text-muted-foreground">Total</div>
-              <div class="text-sm font-semibold">
-                {chartMode === 'distance'
-                  ? `${Number(insights.summary.total_distance_km).toLocaleString()} km`
-                  : formatDuration(insights.summary.total_driving_time_min)}
-              </div>
-            </div>
-            <div class="flex-1 bg-secondary/50 rounded px-3 py-2">
-              <div class="text-xs text-muted-foreground">Average</div>
-              <div class="text-sm font-semibold">
-                {chartMode === 'distance'
-                  ? `${chartBuckets.length > 0 ? Math.round(chartAvg).toLocaleString() : 0} km`
-                  : formatDuration(chartBuckets.length > 0 ? Math.round(chartAvg) : 0)}
-              </div>
-            </div>
-          </div>
         </div>
 
-        <!-- Right column: parked vs driving + odometer -->
-        <div class="w-64 shrink-0 space-y-4">
-          <!-- Parked vs driving -->
+        <!-- Odometer -->
+        {#if odometer}
           <div>
-            <span class="text-sm font-medium">Parked vs. driving</span>
-            <div class="mt-2 space-y-1.5">
-              <div class="flex items-center gap-2">
-                <span class="text-xs w-14 text-muted-foreground">Parked</span>
-                <div class="flex-1 bg-secondary rounded-full h-2.5 overflow-hidden">
-                  <div class="h-full bg-emerald-600 rounded-full" style:width="{insights.parked_vs_driving.parked_pct}%"></div>
-                </div>
-                <span class="text-xs font-medium w-10 text-right">{insights.parked_vs_driving.parked_pct}%</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="text-xs w-14 text-muted-foreground">Driving</span>
-                <div class="flex-1 bg-secondary rounded-full h-2.5 overflow-hidden">
-                  <div class="h-full bg-blue-500 rounded-full" style:width="{Math.max(insights.parked_vs_driving.driving_pct, 1)}%"></div>
-                </div>
-                <span class="text-xs font-medium w-10 text-right">{insights.parked_vs_driving.driving_pct}%</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Odometer -->
-          {#if odometer}
-            <div>
-              <div class="flex items-center gap-1.5 mb-1">
+            <div class="flex items-end justify-between mb-2 gap-2 flex-wrap">
+              <div class="flex items-center gap-1.5">
                 <GaugeIcon class="size-3.5 text-muted-foreground" />
                 <span class="text-sm font-medium">Odometer</span>
+                <span class="text-sm text-muted-foreground ml-1">
+                  {Math.round(odometer.current_km).toLocaleString()} km
+                </span>
               </div>
-              <div class="text-lg font-semibold">{Math.round(odometer.current_km).toLocaleString()} km</div>
               {#if odometer.prediction.year_end_km > odometer.current_km}
-                <div class="text-xs text-muted-foreground">
-                  Est. year-end: {Math.round(odometer.prediction.year_end_km).toLocaleString()} km
+                <span class="text-xs text-muted-foreground">
+                  Est. year-end
+                  <span class="text-foreground font-medium">{Math.round(odometer.prediction.year_end_km).toLocaleString()} km</span>
                   ({odometer.prediction.daily_avg_km} km/day)
-                </div>
+                </span>
               {/if}
-              <div class="mt-2">
-                <OdometerChart data={odometer} />
-              </div>
             </div>
-          {/if}
-        </div>
+            <OdometerChart data={odometer} height={180} />
+          </div>
+        {/if}
       </div>
     {:else}
       <div class="text-sm text-muted-foreground py-8 text-center">Loading insights…</div>

@@ -81,7 +81,7 @@
   }
 </script>
 
-<div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-3 py-2 shadow-lg flex items-center gap-3 min-w-80">
+<div class="absolute bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-20 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-3 py-2 shadow-lg flex items-center gap-3 w-[calc(100%-1.5rem)] max-w-md md:min-w-80 md:w-auto">
   <Button variant="ghost" size="icon" class="size-7 shrink-0" onclick={togglePlay}>
     {#if playing}
       <PauseIcon class="size-4" />

@@ -9,6 +9,7 @@
   import MapControls from './MapControls.svelte';
   import MapTooltip from './MapTooltip.svelte';
   import TimeSlider from './TimeSlider.svelte';
+  import ClockIcon from '@lucide/svelte/icons/clock';
 
   let {
     highlightedRoute = null,
@@ -33,6 +34,30 @@
 
   // Time animation filter (null = show all)
   let timeFilter = $state<string | null>(null);
+
+  // Time slider visibility (persisted, default off — it can occlude the map)
+  let showTimeSlider = $state<boolean>(
+    (() => {
+      try { return localStorage.getItem('heatmap-show-time-slider') === '1'; } catch { return false; }
+    })()
+  );
+
+  $effect(() => {
+    try {
+      localStorage.setItem('heatmap-show-time-slider', showTimeSlider ? '1' : '0');
+    } catch {
+      // ignore storage errors
+    }
+  });
+
+  function toggleTimeSlider() {
+    showTimeSlider = !showTimeSlider;
+    // Reset any active time filter when hiding so the heatmap reverts to "All time"
+    if (!showTimeSlider && timeFilter !== null) {
+      timeFilter = null;
+      updateLayer();
+    }
+  }
 
   // Hover tooltip state
   let hoverInfo = $state<{ started_at: string; mileage_km: number; duration_min: number; start_address: string; end_address: string } | null>(null);
@@ -303,12 +328,25 @@
   {#if currentPaths.length > 0 && !highlightedRoute}
     {@const dates = currentPaths.filter((p: any) => p.started_at).map((p: any) => p.started_at).sort()}
     {#if dates.length >= 2}
-      <TimeSlider
-        minDate={dates[0]}
-        maxDate={dates[dates.length - 1]}
-        onchange={(d) => { timeFilter = d; updateLayer(); }}
-        onreset={() => { timeFilter = null; updateLayer(); }}
-      />
+      <button
+        class="absolute bottom-36 md:bottom-6 right-3 z-20 size-9 rounded-md border border-border bg-background/90 backdrop-blur-sm shadow-lg flex items-center justify-center transition-colors hover:bg-accent cursor-pointer"
+        class:bg-primary={showTimeSlider}
+        class:text-primary-foreground={showTimeSlider}
+        title={showTimeSlider ? 'Hide time slider' : 'Show time slider'}
+        aria-label={showTimeSlider ? 'Hide time slider' : 'Show time slider'}
+        aria-pressed={showTimeSlider}
+        onclick={toggleTimeSlider}
+      >
+        <ClockIcon class="size-4" />
+      </button>
+      {#if showTimeSlider}
+        <TimeSlider
+          minDate={dates[0]}
+          maxDate={dates[dates.length - 1]}
+          onchange={(d) => { timeFilter = d; updateLayer(); }}
+          onreset={() => { timeFilter = null; updateLayer(); }}
+        />
+      {/if}
     {/if}
   {/if}
   {#if loading}

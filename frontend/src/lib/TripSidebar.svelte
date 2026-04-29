@@ -96,10 +96,10 @@
 </script>
 
 <div
-  class="flex h-full shrink-0 transition-[width] duration-300 ease-in-out border-r border-border bg-background"
-  style:width={collapsed ? '0px' : '380px'}
+  class="trip-sidebar flex h-full shrink-0 border-r border-border bg-background"
+  style="--sidebar-w: {collapsed ? '0px' : '380px'};"
 >
-  <div class="flex flex-col h-full w-[380px] min-w-[380px] overflow-hidden">
+  <div class="flex flex-col h-full w-full md:w-[380px] md:min-w-[380px] overflow-hidden">
     {#if selectedTrip}
       <div class="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
         <Button variant="ghost" size="icon" onclick={handleBack} class="size-8">
@@ -147,3 +147,15 @@
     {/if}
   </div>
 </div>
+
+<style>
+  /* Mobile: full width regardless of collapsed state (the bottom tab bar handles list/map switching).
+     Desktop: animate between 0px and 380px via the --sidebar-w custom property. */
+  .trip-sidebar { width: 100%; }
+  @media (min-width: 768px) {
+    .trip-sidebar {
+      width: var(--sidebar-w);
+      transition: width 300ms ease-in-out;
+    }
+  }
+</style>

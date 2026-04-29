@@ -12,6 +12,8 @@
   import BarChart3Icon from '@lucide/svelte/icons/bar-chart-3';
   import XIcon from '@lucide/svelte/icons/x';
   import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+  import ListIcon from '@lucide/svelte/icons/list';
+  import MapIcon from '@lucide/svelte/icons/map';
   import type { Trip, TripDetail, GeoJSONLineString, Vehicle } from './lib/types.js';
 
   let stats = $state<{
@@ -30,6 +32,10 @@
   let selectedTrip = $state<TripDetail | null>(null);
   let highlightedRoute = $state<GeoJSONLineString | null>(null);
   let heatmapRef: Heatmap;
+
+  // Mobile tab state — switches between full-screen list and full-screen map.
+  // On desktop both are visible side-by-side and this state has no effect.
+  let mobileTab = $state<'list' | 'map'>('list');
 
   // Global date range — filters both trip list and heatmap
   let dateFrom = $state('');
@@ -71,6 +77,9 @@
     selectedTrip = detail;
     highlightedRoute = detail.route;
     sidebarCollapsed = false;
+    // On mobile, surface the trip details in the list tab so the user can flip
+    // to the map tab to see the route. Desktop is unaffected (both visible).
+    mobileTab = 'list';
   }
 
   function clearDateFilter() {
@@ -175,7 +184,10 @@
     <Button
       variant={insightsOpen ? 'default' : 'ghost'}
       size="sm"
-      onclick={() => (insightsOpen = !insightsOpen)}
+      onclick={() => {
+        insightsOpen = !insightsOpen;
+        if (insightsOpen) mobileTab = 'map';
+      }}
       class="gap-1.5 shrink-0"
     >
       <BarChart3Icon class="size-4" />
@@ -184,23 +196,72 @@
   </header>
 
   <div class="flex-1 min-h-0 flex relative">
-    <TripSidebar
-      bind:collapsed={sidebarCollapsed}
-      bind:selectedTrip
-      vehicleId={selectedVehicleId}
-      {dateFrom}
-      {dateTo}
-      onTripSelect={handleTripSelect}
-    />
-    <div class="flex-1 min-w-0 flex flex-col">
-      <div class="flex-1 min-h-0">
+    <!-- Trip sidebar: full-width on mobile (only when list tab is active), 380px collapsible on desktop -->
+    <div
+      class="md:contents"
+      class:hidden={mobileTab !== 'list'}
+    >
+      <TripSidebar
+        bind:collapsed={sidebarCollapsed}
+        bind:selectedTrip
+        vehicleId={selectedVehicleId}
+        {dateFrom}
+        {dateTo}
+        onTripSelect={handleTripSelect}
+      />
+    </div>
+
+    <!-- Map + insights: full-width on mobile (only when map tab is active), flex-1 on desktop -->
+    <div
+      class="flex-1 min-w-0 flex flex-col"
+      class:hidden={mobileTab !== 'map'}
+      class:md:flex={true}
+    >
+      <!-- Map: hidden on mobile when insights overlay is showing; always shown on desktop. -->
+      <div
+        class="flex-1 min-h-0"
+        class:hidden={insightsOpen}
+        class:md:block={true}
+      >
         <Heatmap bind:this={heatmapRef} {highlightedRoute} vehicleId={selectedVehicleId} {dateFrom} {dateTo} onTripClick={openTrip} />
       </div>
       {#if insightsOpen}
-        <div class="h-[45vh] shrink-0 transition-[height] duration-300 ease-in-out overflow-hidden">
-          <InsightsPanel vehicleId={selectedVehicleId} />
+        <!-- Mobile: takes the full map-tab area.
+             Desktop: in-flow 45vh slot below the map. -->
+        <div class="flex-1 md:flex-none md:h-[45vh] md:shrink-0 md:transition-[height] md:duration-300 md:ease-in-out md:overflow-hidden flex flex-col min-h-0">
+          <div class="md:hidden flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
+            <span class="text-sm font-medium">Insights</span>
+            <Button variant="ghost" size="icon" class="size-8" onclick={() => (insightsOpen = false)}>
+              <XIcon class="size-4" />
+            </Button>
+          </div>
+          <div class="flex-1 min-h-0">
+            <InsightsPanel vehicleId={selectedVehicleId} />
+          </div>
         </div>
       {/if}
     </div>
   </div>
+
+  <!-- Mobile bottom tab bar (hidden on desktop) -->
+  <nav class="md:hidden border-t border-border bg-card shrink-0 flex">
+    <button
+      class="flex-1 flex flex-col items-center gap-0.5 py-2 text-xs cursor-pointer transition-colors"
+      class:text-primary={mobileTab === 'list'}
+      class:text-muted-foreground={mobileTab !== 'list'}
+      onclick={() => (mobileTab = 'list')}
+    >
+      <ListIcon class="size-5" />
+      <span>{selectedTrip ? 'Trip' : 'List'}</span>
+    </button>
+    <button
+      class="flex-1 flex flex-col items-center gap-0.5 py-2 text-xs cursor-pointer transition-colors"
+      class:text-primary={mobileTab === 'map'}
+      class:text-muted-foreground={mobileTab !== 'map'}
+      onclick={() => (mobileTab = 'map')}
+    >
+      <MapIcon class="size-5" />
+      <span>Map</span>
+    </button>
+  </nav>
 </div>

@@ -359,46 +359,99 @@ async def get_insights(
 
 
 @app.get("/api/odometer")
-async def get_odometer(vehicle_id: Optional[str] = Query(None)):
-    conditions, params = ["end_odometer_km IS NOT NULL"], []
+async def get_odometer(
+    vehicle_id: Optional[str] = Query(None),
+    period:     str           = Query("year", description="30d, month, or year"),
+    year:       Optional[int] = Query(None),
+    month:      Optional[int] = Query(None),
+):
+    now = datetime.now()
+    today = date.today()
+
+    if period == "30d":
+        period_from = today - timedelta(days=30)
+        period_to = today
+    elif period == "month":
+        y = year or now.year
+        m = month or now.month
+        period_from = date(y, m, 1)
+        period_to = (date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)) - timedelta(days=1)
+    else:  # year
+        y = year or now.year
+        period_from = date(y, 1, 1)
+        period_to = date(y, 12, 31)
+
+    base_conditions, base_params = ["end_odometer_km IS NOT NULL"], []
     if vehicle_id:
-        params.append(vehicle_id)
-        conditions.append(f"vehicle_id = ${len(params)}")
-    where = " AND ".join(conditions)
+        base_params.append(vehicle_id)
+        base_conditions.append(f"vehicle_id = ${len(base_params)}")
+    base_where = " AND ".join(base_conditions)
 
     async with pool.acquire() as conn:
+        # History bounded to the selected period
+        history_params = base_params + [period_from, period_to]
         rows = await conn.fetch(f"""
             SELECT started_at::date AS date, MAX(end_odometer_km) AS km
             FROM trips
-            WHERE {where}
+            WHERE {base_where}
+              AND started_at::date >= ${len(base_params) + 1}
+              AND started_at::date <= ${len(base_params) + 2}
             GROUP BY started_at::date
             ORDER BY date
-        """, *params)
+        """, *history_params)
+
+        # Trailing 90 days (across all data) — drives the projection rate
+        rate_from = today - timedelta(days=90)
+        recent = await conn.fetch(f"""
+            SELECT started_at::date AS date, MAX(end_odometer_km) AS km
+            FROM trips
+            WHERE {base_where}
+              AND started_at::date >= ${len(base_params) + 1}
+            GROUP BY started_at::date
+            ORDER BY date
+        """, *(base_params + [rate_from]))
 
     history = [{"date": row["date"].isoformat(), "km": float(row["km"])} for row in rows]
 
-    current_km = history[-1]["km"] if history else 0
+    current_km = history[-1]["km"] if history else 0.0
     last_updated = history[-1]["date"] if history else None
 
-    # Prediction: linear extrapolation from last 90 days
     daily_avg_km = 0.0
-    year_end_km = current_km
-    if len(history) >= 2:
-        recent = [h for h in history if h["date"] >= (date.today() - timedelta(days=90)).isoformat()]
-        if len(recent) >= 2:
-            km_diff = recent[-1]["km"] - recent[0]["km"]
-            days_diff = (date.fromisoformat(recent[-1]["date"]) - date.fromisoformat(recent[0]["date"])).days
-            if days_diff > 0:
-                daily_avg_km = round(km_diff / days_diff, 1)
-                days_to_year_end = (date(date.today().year, 12, 31) - date.today()).days
-                year_end_km = round(current_km + daily_avg_km * days_to_year_end, 0)
+    if len(recent) >= 2:
+        km_diff = float(recent[-1]["km"]) - float(recent[0]["km"])
+        days_diff = (recent[-1]["date"] - recent[0]["date"]).days
+        if days_diff > 0:
+            daily_avg_km = round(km_diff / days_diff, 1)
+
+    # Projection: only when the selected period covers today (current 30d window or current year/month)
+    projection: list[dict] = []
+    if history and daily_avg_km > 0 and period_from <= today <= period_to:
+        last_h_date = date.fromisoformat(history[-1]["date"])
+        last_h_km = history[-1]["km"]
+        days_to_end = (period_to - last_h_date).days
+        if days_to_end > 0:
+            end_km = round(last_h_km + daily_avg_km * days_to_end, 0)
+            projection = [
+                {"date": last_h_date.isoformat(), "km": last_h_km},
+                {"date": period_to.isoformat(), "km": end_km},
+            ]
+
+    year_end_km = projection[-1]["km"] if projection else current_km
 
     return {
         "current_km": current_km,
         "last_updated": last_updated,
         "history": history,
+        "projection": projection,
         "prediction": {
             "year_end_km": year_end_km,
             "daily_avg_km": daily_avg_km,
+        },
+        "period": {
+            "type": period,
+            "year": year or now.year,
+            "month": month,
+            "from": period_from.isoformat(),
+            "to": period_to.isoformat(),
         },
     }
