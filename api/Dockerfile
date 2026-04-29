@@ -13,9 +13,11 @@ RUN pip install -r requirements.txt
 
 # Non-root runtime user
 RUN adduser --system --group --no-create-home app
+
+# Copy source (bind-mount at /app/src overlays this at runtime)
+COPY --chown=app:app . ./src/
+
 USER app
 
-COPY --chown=app:app main.py .
-
 EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "src"]

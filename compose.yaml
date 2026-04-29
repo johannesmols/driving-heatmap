@@ -1,12 +1,5 @@
 name: driving-heatmap
 
-x-logging: &logging
-  logging:
-    driver: json-file
-    options:
-      max-size: "10m"
-      max-file: "3"
-
 services:
 
   db:
@@ -16,9 +9,9 @@ services:
       POSTGRES_DB: heatmap
       POSTGRES_USER: heatmap
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+    ports:
+      - "${DB_PORT:-5432}:5432"
     volumes:
-      # Postgres 18+ stores data under a major-version subdir
-      # (e.g. /var/lib/postgresql/18/docker), so mount the parent dir.
       - ./data/postgres:/var/lib/postgresql
       - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
@@ -32,17 +25,13 @@ services:
           memory: 512M
     restart: unless-stopped
     networks:
-      - npm_network
-    <<: *logging
+      - internal
 
   sync:
     container_name: driving-heatmap-sync
     build: ./sync
-    # Live-mount source so `git pull` + container restart picks up code changes
-    # without an image rebuild. Image still has its own COPY of main.py for
-    # standalone runs; the bind-mount overlays it at runtime.
     volumes:
-      - ./sync/main.py:/app/main.py:ro
+      - ./sync:/app/src:ro
     environment:
       DATABASE_URL: postgresql://heatmap:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/heatmap
       CC_EMAIL: ${CC_EMAIL:?CC_EMAIL must be set in .env}
@@ -58,14 +47,15 @@ services:
           memory: 256M
     restart: unless-stopped
     networks:
-      - npm_network
-    <<: *logging
+      - internal
 
   api:
     container_name: driving-heatmap-api
     build: ./api
     volumes:
-      - ./api/main.py:/app/main.py:ro
+      - ./api:/app/src:ro
+    ports:
+      - "${API_PORT:-8000}:8000"
     environment:
       DATABASE_URL: postgresql://heatmap:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/heatmap
     depends_on:
@@ -77,30 +67,30 @@ services:
           memory: 256M
     restart: unless-stopped
     networks:
-      - npm_network
-    <<: *logging
+      - internal
 
   frontend:
     container_name: driving-heatmap-frontend
     build: ./frontend
-    expose:
-      - "80"
+    volumes:
+      - ./frontend:/app/src
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
     depends_on:
       - api
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 512M
     restart: unless-stopped
     networks:
-      - npm_network
-    <<: *logging
+      - internal
 
   pgadmin:
     container_name: driving-heatmap-pgadmin
     image: dpage/pgadmin4:latest
-    expose:
-      - "80"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?PGADMIN_PASSWORD must be set in .env}
@@ -120,13 +110,10 @@ services:
           memory: 512M
     restart: unless-stopped
     networks:
-      - npm_network
-    <<: *logging
+      - internal
 
 volumes:
   pgadmin_data:
 
 networks:
-  npm_network:
-    name: npm_network
-    external: true
+  internal:

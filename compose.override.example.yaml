@@ -1,0 +1,12 @@
+# TrueNAS: Copy this to compose.override.yaml to attach frontend to Nginx Proxy Manager.
+# Docker Compose merges this automatically — no need to edit compose.yaml.
+
+services:
+  frontend:
+    networks:
+      - internal
+      - npm_network
+
+networks:
+  npm_network:
+    external: true

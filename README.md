@@ -47,10 +47,8 @@ Open <http://localhost:3000>. The sync service will start pulling trips immediat
 
 ### Development
 
-The `compose.override.yaml` automatically adds dev conveniences (exposed ports, pgAdmin):
-
-| Service | Dev URL |
-|---------|---------|
+| Service | URL |
+|---------|-----|
 | Frontend | <http://localhost:3000> |
 | API (Swagger) | <http://localhost:8000/docs> |
 | PostgreSQL | `localhost:5432` |
@@ -66,16 +64,7 @@ bun run dev    # Vite dev server at http://localhost:5173
 
 ### Production (TrueNAS / server)
 
-Rename or delete `compose.override.yaml` to use the production-baseline `compose.yaml` (no exposed db/api ports, no pgAdmin):
-
-```bash
-mv compose.override.yaml compose.override.yaml.bak
-docker compose up -d --build
-```
-
-#### Updating the deployment
-
-`compose.yaml` bind-mounts `sync/main.py` and `api/main.py` into their containers, so source changes to those files are picked up on container restart — no image rebuild needed:
+All services bind-mount their source directories, so code changes from `git pull` are picked up on container restart — no image rebuild needed. The frontend rebuilds itself automatically at startup.
 
 ```bash
 git pull
@@ -84,8 +73,8 @@ git pull
 
 A rebuild **is** required for changes to:
 
-- `requirements.txt` or either Python `Dockerfile` (Python deps are baked into the image)
-- anything under `frontend/` (the SPA is built at image-build time and served as static files by nginx)
+- `requirements.txt` (Python deps are baked into the image)
+- `Dockerfile` of any service
 - `db/init/` (schema is only run on a fresh database volume)
 
 For those, run once on the host:
@@ -95,7 +84,21 @@ docker compose build --no-cache <service>
 docker compose up -d <service>
 ```
 
-The TrueNAS UI Restart action does **not** rebuild images — it only restarts containers using whatever image is already cached.
+#### Nginx Proxy Manager (TrueNAS)
+
+The base `compose.yaml` uses an internal network. To expose services through NPM, create a `compose.override.yaml`:
+
+```yaml
+services:
+  frontend:
+    networks:
+      - internal
+      - npm_network
+
+networks:
+  npm_network:
+    external: true
+```
 
 ## Configuration
 

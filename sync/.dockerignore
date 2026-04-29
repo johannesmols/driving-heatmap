@@ -8,5 +8,6 @@ venv/
 .env.*
 .pytest_cache/
 .mypy_cache/
+Dockerfile
 .ruff_cache/
 *.log
