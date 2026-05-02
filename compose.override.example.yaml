@@ -1,8 +1,13 @@
-# TrueNAS: Copy this to compose.override.yaml to attach frontend to Nginx Proxy Manager.
+# TrueNAS: Copy this to compose.override.yaml to attach frontend + pgadmin to Nginx Proxy Manager.
 # Docker Compose merges this automatically — no need to edit compose.yaml.
+# After editing, run: docker compose up -d --force-recreate frontend pgadmin
 
 services:
   frontend:
+    networks:
+      - internal
+      - npm_network
+  pgadmin:
     networks:
       - internal
       - npm_network
