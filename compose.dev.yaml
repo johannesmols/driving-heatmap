@@ -1,4 +1,8 @@
-name: driving-heatmap
+name: driving-heatmap-dev
+
+# Local development: builds locally, bind-mounts source for hot-reload.
+# Run: docker compose -f compose.dev.yaml up -d
+# Frontend runs separately via `cd frontend && bun run dev` (Vite proxies /api to localhost:8000).
 
 services:
 
@@ -19,17 +23,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 512M
     restart: unless-stopped
     networks:
       - internal
 
   sync:
     container_name: driving-heatmap-sync
-    image: johannesmols/driving-heatmap-sync:latest
+    build: ./sync
+    volumes:
+      - ./sync:/app:ro
     environment:
       DATABASE_URL: postgresql://heatmap:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/heatmap
       CC_EMAIL: ${CC_EMAIL:?CC_EMAIL must be set in .env}
@@ -39,43 +41,23 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 256M
     restart: unless-stopped
     networks:
       - internal
 
   api:
     container_name: driving-heatmap-api
-    image: johannesmols/driving-heatmap-api:latest
+    build: ./api
+    volumes:
+      - ./api:/app:ro
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
       DATABASE_URL: postgresql://heatmap:${DB_PASSWORD:?DB_PASSWORD must be set in .env}@db:5432/heatmap
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       db:
         condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    restart: unless-stopped
-    networks:
-      - internal
-
-  frontend:
-    container_name: driving-heatmap-frontend
-    image: johannesmols/driving-heatmap-frontend:latest
-    ports:
-      - "${FRONTEND_PORT:-3000}:80"
-    depends_on:
-      - api
-    deploy:
-      resources:
-        limits:
-          memory: 128M
     restart: unless-stopped
     networks:
       - internal
@@ -98,10 +80,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 512M
     restart: unless-stopped
     networks:
       - internal
