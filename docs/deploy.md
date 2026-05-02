@@ -18,6 +18,7 @@ The NAS only needs `compose.yaml`, `.env`, `db/init/`, `db/pgadmin/`, and the `d
 2. Add two secrets to the GitHub repo (Settings → Secrets and variables → Actions):
    - `DOCKERHUB_USERNAME` = `johannesmols`
    - `DOCKERHUB_TOKEN` = the token from step 1
+3. On the NAS, ensure the `npm_network` external Docker network exists (it's created by Nginx Proxy Manager). `compose.yaml` attaches `frontend` and `pgadmin` to it so NPM can resolve them by container name.
 
 ## Updating the NAS
 
@@ -43,7 +44,7 @@ Find available tags at `https://hub.docker.com/r/johannesmols/driving-heatmap-<s
 
 ## Local dev
 
-Full stack with bind-mounted source and uvicorn `--reload`:
+Use `compose.dev.yaml`, not `compose.yaml`. The production compose file requires the `npm_network` external network (created by Nginx Proxy Manager on the NAS) and won't come up locally without it. `compose.dev.yaml` doesn't reference `npm_network` and builds the images locally with bind-mounted source and uvicorn `--reload`:
 
 ```bash
 docker compose -f compose.dev.yaml up -d
@@ -56,3 +57,5 @@ cd frontend
 bun install
 bun run dev
 ```
+
+If you ever need to test the production compose file locally, create the network first: `docker network create npm_network`.

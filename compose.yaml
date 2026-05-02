@@ -79,6 +79,7 @@ services:
     restart: unless-stopped
     networks:
       - internal
+      - npm_network
 
   pgadmin:
     container_name: driving-heatmap-pgadmin
@@ -105,9 +106,12 @@ services:
     restart: unless-stopped
     networks:
       - internal
+      - npm_network
 
 volumes:
   pgadmin_data:
 
 networks:
   internal:
+  npm_network:
+    external: true
